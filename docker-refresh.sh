@@ -1,74 +1,56 @@
 #!/bin/bash
 
-# help
+
+# Usage -------------------------------------------------
 USAGE="
-Usage: $(basename $0) [-h] -d argument
-  -h: help
-  -d: directory path to docker files (relative to /server/docker)
+Usage: $(basename "$0") [-h] [-d DIR]
+  -h       Show this help
+  -d DIR   Directory containing docker files (default: current dir)
 "
 
 
-############
-# Variables
-############
-# root directory of docker files
-ROOTDIR="/server/docker"
-
-
-############
-# get user provided options
-############
-while getopts ':hd:' OPTION; do
-  case "$OPTION" in
-    h) # echo help
-      echo -e "$USAGE"
-      exit 0
-      ;;
-    d) # read external config file
-      SUBDIR=$OPTARG
-      ;;
-    ?)
-      echo -e "$USAGE"
-      exit 1
-      ;;
+# Parse options -----------------------------------------
+while getopts ":hd:" opt; do
+  case $opt in
+    h) echo "$USAGE"; exit 0 ;;
+    d) TARGET_DIR=$OPTARG ;;
+    *) echo "$USAGE"; exit 1 ;;
   esac
 done
 
 
-############
-# Change to Repository
-############
-# assemble full path
-FULLDIR="$ROOTDIR/$SUBDIR"
+# Determine working directory ---------------------------
+TARGET_DIR=${TARGET_DIR:-$(pwd)}
 
-# change to folder
-cd "$FULLDIR"
 
-# check for docker-compose
-if [ -f "./docker-compose.yml" ]
-then # file exists
-    echo "found docker-compose.yml"
-else # file does not exist
-    echo "ERROR: no docker-compose.yml file found in repository at: $FULLDIR"
+# Move there ---------------------------------------------
+if ! cd "$TARGET_DIR"; then
+  echo "ERROR: cannot cd to $TARGET_DIR"
+  exit 1
+fi
+
+
+# Verify compose file ------------------------------------
+if [[ ! -f ./docker-compose.yml ]]; then
+  echo "ERROR: docker-compose.yml not found in $TARGET_DIR"
+  exit 1
+fi
+echo "found docker-compose.yml"
+
+
+# Ensure script is run as root or via sudo -------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+    echo "ERROR: this script must be run as root (use sudo)." >&2
     exit 1
 fi
 
 
-############
-# Execute Docker Commands
-############
-# stop and remove currently running docker container
+# Refresh containers -------------------------------------
+docker compose pull
 docker compose stop
 docker compose rm -f
-
-# pull docker image
-docker compose pull
-
-# recreate docker container
 docker compose up -d --force-recreate
 
 
-############
-# Exit Code
-############
+# Exit -------------------------------------
 exit 0

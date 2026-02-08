@@ -1,108 +1,83 @@
 #!/bin/bash
 
-# help
+
+# Usage -------------------------------------------------
 USAGE="
-Usage: $(basename $0) [-h] -d argument [-r argument] [-t argument]
-  -h: help
-  -d: directory path to docker files (relative to /server/docker)
-  -r: name of docker repository
-  -t: user defined docker image tag
+Usage: $(basename "$0") [-h] [-d DIR] [-r REPO] [-t TAG]
+  -h       Show this help
+  -d DIR   Directory containing Dockerfile & compose (default: current dir)
+  -r REPO  Docker repository name (default: basename of DIR)
+  -t TAG   Image tag (default: YY.MM.DD)
 "
 
 
-############
-# Variables
-############
-# root directory of docker files
-ROOTDIR="/server/docker"
-
-# default docker image tag
+# Default tag --------------------------------------------
 TAG=$(date +"%y.%m.%d")
 
 
-############
-# get user provided options
-############
-while getopts ':hd:r:t:' OPTION; do
-  case "$OPTION" in
-    h) # echo help
-      echo -e "$USAGE"
-      exit 0
-      ;;
-    d) # read external config file
-      SUBDIR=$OPTARG
-      ;;
-    r) # read external config file
-      REPO=$OPTARG
-      ;;
-    t) # read external config file
-      TAG=$OPTARG
-      ;;
-    ?)
-      echo -e "$USAGE"
-      exit 1
-      ;;
+# Parse options -----------------------------------------
+while getopts ":hd:r:t:" opt; do
+  case $opt in
+    h) echo "$USAGE"; exit 0 ;;
+    d) TARGET_DIR=$OPTARG ;;
+    r) REPO=$OPTARG ;;
+    t) TAG=$OPTARG ;;
+    *) echo "$USAGE"; exit 1 ;;
   esac
 done
 
-# set REPO name
-if [ -n "$REPO" ]
-then
-    # info
-    echo "docker repository is user-defined: $REPO"
+
+# Determine working directory ---------------------------
+TARGET_DIR=${TARGET_DIR:-$(pwd)}
+
+
+# Set repository name if not supplied --------------------
+if [[ -z $REPO ]]; then
+  REPO=$(basename "$TARGET_DIR")
+  echo "docker repository not defined, using: $REPO"
 else
-    # SUBDIR does not exist and is set to SUBDIR
-    REPO=$SUBDIR
-
-    # info
-    echo "docker repository is not defined, set to: $REPO"
+  echo "docker repository is user-defined: $REPO"
 fi
 
 
-############
-# Change to Repository
-############
-# assemble full path
-FULLDIR="$ROOTDIR/$SUBDIR"
-
-# change to folder
-cd "$FULLDIR"
-
-# check for dockerfile
-if [ -f "./Dockerfile" ]
-then # file exists
-    echo "found dockerfile"
-else # file does not exist
-    echo "ERROR: no dockerfile found in repository at: $FULLDIR"
-    exit 1
+# Move there ---------------------------------------------
+if ! cd "$TARGET_DIR"; then
+  echo "ERROR: cannot cd to $TARGET_DIR"
+  exit 1
 fi
 
-# check for docker-compose
-if [ -f "./docker-compose.yml" ]
-then # file exists
-    echo "found docker-compose.yml"
-else # file does not exist
-    echo "ERROR: no docker-compose.yml file found in repository at: $FULLDIR"
+
+# Verify required files ----------------------------------
+if [[ ! -f ./Dockerfile ]]; then
+  echo "ERROR: Dockerfile not found in $TARGET_DIR"
+  exit 1
+fi
+echo "found Dockerfile"
+
+if [[ ! -f ./docker-compose.yml ]]; then
+  echo "ERROR: docker-compose.yml not found in $TARGET_DIR"
+  exit 1
+fi
+echo "found docker-compose.yml"
+
+
+# Ensure script is run as root or via sudo -------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+    echo "ERROR: this script must be run as root (use sudo)." >&2
     exit 1
 fi
 
 
-############
-# Execute Docker Commands
-############
-# build new docker image
+# Build images -------------------------------------------
 docker buildx build --no-cache -t "$REPO:$TAG" .
 docker buildx build            -t "$REPO:latest" .
 
-# stop and remove currently running docker container
+
+# Restart containers --------------------------------------
 docker compose stop
 docker compose rm -f
-
-# recreate docker container
 docker compose up -d --force-recreate
 
 
-############
-# Exit Code
-############
+# Exit -------------------------------------
 exit 0
