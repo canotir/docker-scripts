@@ -8,8 +8,8 @@ They enforce execution as root (or via sudo) and provide minimal, clear output.
 ## Repository Structure
 ```
 /root
- ├─ docker‑refresh.sh   # Stop, remove, pull and restart containers
- ├─ docker‑bake.sh      # Build images, tag them, and restart containers
+ ├─ docker-refresh.sh   # Stop, remove, pull and restart containers
+ ├─ docker-bake.sh      # Build images, tag them, and restart containers
  └─ README.md           # Documentation
 ```
 
@@ -32,7 +32,7 @@ Stops, removes, pulls, and recreates containers defined in docker-compose.yml.
 ### docker-bake.sh
 
 ```shell
-# Build using the current folder name as repository, tag = today’s date
+# Build using the current folder name as repository, tag = today's date
 sudo ./docker-bake.sh
 
 # Custom directory, repository, or tag
@@ -51,6 +51,7 @@ Builds Docker images, tags them, and restarts the compose stack.
 ## Version history
 
 | Major | Minor | Fix | Concerns | Note |
-| ----- | ------- | ------- | -------- | ---- |
-| 2 | 0 | 0 | all | Added root‑directory layout, sudo check, and refined usage messages |
-| 1 | 0 | 0 | all | initial working version. |
+| ----- | ----- | --- | -------- | ---- |
+|       |       | 1   | ``README.md`` | Removed non-ASCII characters from readme. |
+| 2     | 0     | 0   | all | Added root-directory layout, sudo check, and refined usage messages. |
+| 1     | 0     | 0   | all | initial working version. |
