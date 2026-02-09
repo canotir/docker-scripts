@@ -81,7 +81,7 @@ while read -r LINE; do
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
     if ! cd "$COMPOSE_DIR" 2>/dev/null; then
-        echo -e "$SERVICE: \e[31mcannot cd to $COMPOSE_DIR\e[0m"   
+        echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m"   
         continue
     fi
 
@@ -108,7 +108,7 @@ while read -r LINE; do
     # Verify docker-compose file exists
     #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
-        echo -e "$SERVICE: \e[31mcompose file missing in $COMPOSE_DIR\e[0m"
+        echo -e "$SERVICE: \e[31mcompose file missing --> $COMPOSE_DIR\e[0m"
         continue
     fi
 
