@@ -12,6 +12,15 @@ Usage: $(basename "$0") [-h] [-d DIR]
 
 
 #---------------------------------------------
+# Ensure script is run as root or via sudo
+#---------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+    echo -e "\e[31mERROR:\e[0m this script must be run as root (use sudo)." >&2
+    exit 1
+fi
+
+
+#---------------------------------------------
 # Parse options
 #---------------------------------------------
 while getopts ":hd:" opt; do
@@ -46,15 +55,6 @@ if [[ ! -f ./docker-compose.yml ]]; then
   exit 1
 fi
 echo "found docker-compose.yml"
-
-
-#---------------------------------------------
-# Ensure script is run as root or via sudo
-#---------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-    echo -e "\e[31mERROR:\e[0m this script must be run as root (use sudo)." >&2
-    exit 1
-fi
 
 
 #---------------------------------------------
