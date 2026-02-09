@@ -81,7 +81,7 @@ while read -r LINE; do
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
     if ! cd "$COMPOSE_DIR" 2>/dev/null; then
-        echo "$SERVICE: cannot cd to $COMPOSE_DIR"
+        echo -e "$SERVICE: \e[31mcannot cd to $COMPOSE_DIR\e[0m"   
         continue
     fi
 
@@ -108,7 +108,7 @@ while read -r LINE; do
     # Verify docker-compose file exists
     #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
-        echo "$SERVICE: compose file missing --> $COMPOSE_PATH"
+        echo -e "$SERVICE: \e[31mcompose file missing in $COMPOSE_DIR\e[0m"
         continue
     fi
 
@@ -191,7 +191,7 @@ while read -r LINE; do
     # If any digests differ, recreate services
     #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
-        echo "$SERVICE: out-of-date --> ${CHANGED[*]}"
+        echo -e "$SERVICE: \e[38;5;208mout-of-date\e[0m --> ${CHANGED[*]}"
         
         if (( DRY_RUN )); then
             echo " dry-run..."
@@ -212,7 +212,7 @@ while read -r LINE; do
             fi
         fi
     else
-        echo "$SERVICE: up-to-date"
+        echo -e "$SERVICE: \e[32mup-to-date\e[0m"
     fi
 
     #---------------------------------------------
