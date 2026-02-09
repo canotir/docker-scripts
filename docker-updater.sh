@@ -5,7 +5,7 @@
 # Usage
 #---------------------------------------------
 USAGE="
-Usage: $(basename "$0") [-h]
+Usage: $(basename "$0") [-h] [-d] [-q]
   -h    Show this help
   -d    Dry run - detect updates but do NOT restart services
   -q    Quiet execution of docker commands
@@ -57,6 +57,8 @@ while read -r LINE; do
     # Split line into fields (whitespace separated)
     #---------------------------------------------
     set -- $LINE
+
+    # separate out information
     SERVICE=$1
     CONFIGRAW=$3 # third column = path to compose file
 
@@ -118,11 +120,11 @@ while read -r LINE; do
 
     # get list of images used by the inspected service
     docker compose images --format table |
-    tail -n +2 |                                # <-- skip header
+    tail -n +2 | # <-- skip header line
     while read -r IMG_LINE; do
         set -- $IMG_LINE
 
-        # split information of inspected container
+        # separate out information
         CONTAINER=$1
         REPO=$2
         TAG=$3
@@ -140,8 +142,10 @@ while read -r LINE; do
     # Pull latest images for this service
     #---------------------------------------------
     if (( QUIET )); then
+        # quiet mode
         docker compose pull >/dev/null 2>&1
     else
+        # non-quiet mode
         echo ""
         docker compose pull
         echo ""
@@ -155,11 +159,11 @@ while read -r LINE; do
 
     # get list of images used by the inspected service
     docker compose images --format table |
-    tail -n +2 | # <-- skip header
+    tail -n +2 | # <-- skip header line
     while read -r IMG_LINE; do
         set -- $IMG_LINE
 
-        # split information of inspected container
+        # separate out information
         CONTAINER=$1
         REPO=$2
         TAG=$3
@@ -185,20 +189,22 @@ while read -r LINE; do
 
 
     #---------------------------------------------
-    # If any digests differ, recreate service
+    # If any digests differ, recreate services
     #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
         echo "$SERVICE: out-of-date --> ${CHANGED[*]}"
         
         if (( DRY_RUN )); then
-            echo "  dry-run..."
+            echo " dry-run..."
         else
             # stop, remove, and recreate service with the new images
             if (( QUIET )); then
+                # quiet mode
                 docker compose stop                     >/dev/null 2>&1
                 docker compose rm   -f                  >/dev/null 2>&1
                 docker compose up   -d --force-recreate >/dev/null 2>&1
             else
+                # non-quiet mode
                 echo ""
                 docker compose stop
                 docker compose rm   -f
