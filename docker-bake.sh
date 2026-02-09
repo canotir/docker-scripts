@@ -54,7 +54,7 @@ fi
 # Move there 
 #---------------------------------------------
 if ! cd "$TARGET_DIR"; then
-  echo "ERROR: cannot cd to $TARGET_DIR"
+  echo -e "\e[31mERROR:\e[0m cannot cd to $TARGET_DIR"
   exit 1
 fi
 
@@ -62,14 +62,16 @@ fi
 #---------------------------------------------
 # Verify required files 
 #---------------------------------------------
+# Dockerfile
 if [[ ! -f ./Dockerfile ]]; then
-  echo "ERROR: Dockerfile not found in $TARGET_DIR"
+  echo -e "\e[31mERROR:\e[0m Dockerfile not found in $TARGET_DIR"
   exit 1
 fi
 echo "found Dockerfile"
 
+# docker-compose.yml
 if [[ ! -f ./docker-compose.yml ]]; then
-  echo "ERROR: docker-compose.yml not found in $TARGET_DIR"
+  echo -e "\e[31mERROR:\e[0m docker-compose.yml not found in $TARGET_DIR"
   exit 1
 fi
 echo "found docker-compose.yml"
@@ -79,7 +81,7 @@ echo "found docker-compose.yml"
 # Ensure script is run as root or via sudo 
 #---------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-    echo "ERROR: this script must be run as root (use sudo)." >&2
+    echo -e "\e[31mERROR:\e[0m this script must be run as root (use sudo)." >&2
     exit 1
 fi
 

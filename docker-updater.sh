@@ -34,7 +34,7 @@ done
 # Must run as root (or via sudo) 
 #---------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-    echo "ERROR: this script must be run as root (use sudo)." >&2
+    echo -e "\e[31mERROR:\e[0m this script must be run as root (use sudo)." >&2
     exit 1
 fi
 
