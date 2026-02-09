@@ -6,18 +6,21 @@ USAGE="
 Usage: $(basename "$0") [-h]
   -h    Show this help
   -d    Dry run - detect updates but do NOT restart services
+  -q    Quiet execution of docker commands
 "
 
 
 # Parse options -----------------------------------------
 # defaults
 DRY_RUN=0
+QUIET=0
 
 # get user input
-while getopts ":hd" opt; do
+while getopts ":hdq" opt; do
   case $opt in
     h) echo "$USAGE"; exit 0 ;;
     d) DRY_RUN=1 ;;
+    q) QUIET=1 ;;
     *) echo "$USAGE"; exit 1 ;;
   esac
 done
@@ -34,6 +37,12 @@ fi
 docker compose ls --format table |
 tail -n +2 | # <-- skip header
 while read -r LINE; do
+    # separator for improving readability in non-quiet mode ---------------------------------------------
+    if (( ! QUIET )); then
+        echo "---------------------------------------------"
+    fi
+
+
     # Split line into fields (whitespace separated) ---------------------------------------------
     set -- $LINE
     SERVICE=$1
@@ -55,8 +64,11 @@ while read -r LINE; do
         echo "$SERVICE: cannot cd to $COMPOSE_DIR"
         continue
     fi
-    if [[ ! -f "$COMPOSE_FILE" ]]; then
-        echo "$SERVICE: compose file missing --> $COMPOSE_PATH"
+
+
+    # Skip if a .docker-updater-ignore file exists in the root folder ---------------------------------------------
+    if [[ -f "./.docker-updater-ignore" ]]; then
+        echo "$SERVICE: .docker-updater-ignore file present --> skipping this service"
         continue
     fi
 
@@ -68,39 +80,70 @@ while read -r LINE; do
     fi
 
 
-    # Capture current image IDs ---------------------------------------------
+    # Verify docker-compose file exists ---------------------------------------------
+    if [[ ! -f "$COMPOSE_FILE" ]]; then
+        echo "$SERVICE: compose file missing --> $COMPOSE_PATH"
+        continue
+    fi
+
+
+    # Capture current image digests ---------------------------------------------
     declare -A BEFORE
+
+    # get list of images used by the inspected service
     docker compose images --format table |
     tail -n +2 |                                # <-- skip header
     while read -r IMG_LINE; do
         set -- $IMG_LINE
+
+        # split information of inspected container
+        CONTAINER=$1
         REPO=$2
         TAG=$3
         IMG_REF="${REPO}:${TAG}"
-        ID=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
-        BEFORE["$IMG_REF"]=$ID
+
+        # fetch digest of image used by inspected container
+        DIGEST=$(docker inspect --format "{{.Image}}" "$CONTAINER" 2>/dev/null)
+        
+        # store digest
+        BEFORE["$IMG_REF"]=$DIGEST
     done
 
 
     # Pull latest images for this service ---------------------------------------------
-    docker compose pull >/dev/null 2>&1
+    if (( QUIET )); then
+        docker compose pull >/dev/null 2>&1
+    else
+        echo ""
+        docker compose pull
+        echo ""
+    fi
 
 
-    # Capture new image IDs ---------------------------------------------
+    # Capture new image digests ---------------------------------------------
     declare -A AFTER
+
+    # get list of images used by the inspected service
     docker compose images --format table |
     tail -n +2 | # <-- skip header
     while read -r IMG_LINE; do
         set -- $IMG_LINE
+
+        # split information of inspected container
+        CONTAINER=$1
         REPO=$2
         TAG=$3
         IMG_REF="${REPO}:${TAG}"
-        ID=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
-        AFTER["$IMG_REF"]=$ID
+
+        # fetch digest of image in the local image registry corresponding to the same repo:tag used by the inspected container
+        DIGEST=$(docker inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
+
+        # store digest
+        AFTER["$IMG_REF"]=$DIGEST
     done
 
 
-    # Compare IDs - if any differ, recreate service ---------------------------------------------
+    # Compare digests before and after ---------------------------------------------
     CHANGED=()
     for IMG in "${!AFTER[@]}"; do
         if [[ "${BEFORE[$IMG]}" != "${AFTER[$IMG]}" ]]; then
@@ -108,26 +151,42 @@ while read -r LINE; do
         fi
     done
 
+
+    # If any digests differ, recreate service ---------------------------------------------
     if (( ${#CHANGED[@]} )); then
         echo "$SERVICE: out-of-date --> ${CHANGED[*]}"
         
         if (( DRY_RUN )); then
             echo "  dry-run..."
         else
-            echo ""
-            echo "updating..."
-
             # stop, remove, and recreate service with the new images
-            docker compose stop
-            docker compose rm -f
-            docker compose up -d --force-recreate
-
-            echo ""
+            if (( QUIET )); then
+                docker compose stop                     >/dev/null 2>&1
+                docker compose rm   -f                  >/dev/null 2>&1
+                docker compose up   -d --force-recreate >/dev/null 2>&1
+            else
+                echo ""
+                docker compose stop
+                docker compose rm   -f
+                docker compose up   -d --force-recreate
+                echo ""
+            fi
         fi
     else
         echo "$SERVICE: up-to-date"
     fi
 
+
     # clean associative arrays for next iteration ---------------------------------------------
     unset BEFORE AFTER
 done
+
+
+# separator for improving readability in non-quiet mode ---------------------------------------------
+if (( ! QUIET )); then
+    echo "---------------------------------------------"
+fi
+
+
+# Exit ---------------------------------------------
+exit 0
