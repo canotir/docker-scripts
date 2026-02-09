@@ -191,7 +191,7 @@ while read -r LINE; do
     # If any digests differ, recreate services
     #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
-        echo -e "$SERVICE: \e[38;5;208mout-of-date\e[0m --> ${CHANGED[*]}"
+        echo -e "$SERVICE: \e[38;5;208mout-of-date --> ${CHANGED[*]}\e[0m"
         
         if (( DRY_RUN )); then
             echo " dry-run..."
