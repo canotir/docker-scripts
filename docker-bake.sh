@@ -1,7 +1,9 @@
 #!/bin/bash
 
 
-# Usage -------------------------------------------------
+#---------------------------------------------
+# Usage
+#---------------------------------------------
 USAGE="
 Usage: $(basename "$0") [-h] [-d DIR] [-r REPO] [-t TAG]
   -h       Show this help
@@ -11,11 +13,15 @@ Usage: $(basename "$0") [-h] [-d DIR] [-r REPO] [-t TAG]
 "
 
 
-# Default tag --------------------------------------------
+#---------------------------------------------
+# Default tag 
+#---------------------------------------------
 TAG=$(date +"%y.%m.%d")
 
 
-# Parse options -----------------------------------------
+#---------------------------------------------
+# Parse options 
+#---------------------------------------------
 while getopts ":hd:r:t:" opt; do
   case $opt in
     h) echo "$USAGE"; exit 0 ;;
@@ -27,11 +33,15 @@ while getopts ":hd:r:t:" opt; do
 done
 
 
-# Determine working directory ---------------------------
+#---------------------------------------------
+# Determine working directory 
+#---------------------------------------------
 TARGET_DIR=${TARGET_DIR:-$(pwd)}
 
 
-# Set repository name if not supplied --------------------
+#---------------------------------------------
+# Set repository name if not supplied 
+#---------------------------------------------
 if [[ -z $REPO ]]; then
   REPO=$(basename "$TARGET_DIR")
   echo "docker repository not defined, using: $REPO"
@@ -40,14 +50,18 @@ else
 fi
 
 
-# Move there ---------------------------------------------
+#---------------------------------------------
+# Move there 
+#---------------------------------------------
 if ! cd "$TARGET_DIR"; then
   echo "ERROR: cannot cd to $TARGET_DIR"
   exit 1
 fi
 
 
-# Verify required files ----------------------------------
+#---------------------------------------------
+# Verify required files 
+#---------------------------------------------
 if [[ ! -f ./Dockerfile ]]; then
   echo "ERROR: Dockerfile not found in $TARGET_DIR"
   exit 1
@@ -61,23 +75,31 @@ fi
 echo "found docker-compose.yml"
 
 
-# Ensure script is run as root or via sudo -------------------------------------------
+#---------------------------------------------
+# Ensure script is run as root or via sudo 
+#---------------------------------------------
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: this script must be run as root (use sudo)." >&2
     exit 1
 fi
 
 
-# Build images -------------------------------------------
+#---------------------------------------------
+# Build images 
+#---------------------------------------------
 docker buildx build --no-cache -t "$REPO:$TAG" .
 docker buildx build            -t "$REPO:latest" .
 
 
-# Restart containers --------------------------------------
+#---------------------------------------------
+# Restart containers 
+#---------------------------------------------
 docker compose stop
 docker compose rm -f
 docker compose up -d --force-recreate
 
 
-# Exit -------------------------------------
+#---------------------------------------------
+# Exit 
+#---------------------------------------------
 exit 0
