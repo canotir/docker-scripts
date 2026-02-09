@@ -112,7 +112,6 @@ while read -r LINE; do
         continue
     fi
 
-
     #---------------------------------------------
     # Capture current image digests
     #---------------------------------------------
@@ -214,6 +213,13 @@ while read -r LINE; do
         fi
     else
         echo "$SERVICE: up-to-date"
+    fi
+
+    #---------------------------------------------
+    # separator for improving readability in non-quiet mode
+    #---------------------------------------------
+    if (( ! QUIET )); then
+        echo ""
     fi
 
 
