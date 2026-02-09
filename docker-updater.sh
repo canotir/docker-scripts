@@ -1,7 +1,9 @@
 #!/bin/bash
 
 
-# Usage ---------------------------------------------
+#---------------------------------------------
+# Usage
+#---------------------------------------------
 USAGE="
 Usage: $(basename "$0") [-h]
   -h    Show this help
@@ -10,7 +12,9 @@ Usage: $(basename "$0") [-h]
 "
 
 
-# Parse options -----------------------------------------
+#---------------------------------------------
+# Parse options
+#---------------------------------------------
 # defaults
 DRY_RUN=0
 QUIET=0
@@ -26,68 +30,90 @@ while getopts ":hdq" opt; do
 done
 
 
-# Must run as root (or via sudo)  ---------------------------------------------
+#---------------------------------------------
+# Must run as root (or via sudo) 
+#---------------------------------------------
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: this script must be run as root (use sudo)." >&2
     exit 1
 fi
 
 
-# Get list of compose services (table format) ---------------------------------------------
+#---------------------------------------------
+# Get list of compose services (table format)
+#---------------------------------------------
 docker compose ls --format table |
 tail -n +2 | # <-- skip header
 while read -r LINE; do
-    # separator for improving readability in non-quiet mode ---------------------------------------------
+    #---------------------------------------------
+    # separator for improving readability in non-quiet mode
+    #---------------------------------------------
     if (( ! QUIET )); then
         echo "---------------------------------------------"
     fi
 
 
-    # Split line into fields (whitespace separated) ---------------------------------------------
+    #---------------------------------------------
+    # Split line into fields (whitespace separated)
+    #---------------------------------------------
     set -- $LINE
     SERVICE=$1
     CONFIGRAW=$3 # third column = path to compose file
 
 
-    # Get the first config path ---------------------------------------------
+    #---------------------------------------------
+    # Get the first config path
+    #---------------------------------------------
     CONFIG=${CONFIGRAW%%,*}
 
 
-    # Resolve directory and file ---------------------------------------------
+    #---------------------------------------------
+    # Resolve directory and file
+    #---------------------------------------------
     COMPOSE_PATH="$CONFIG"
     COMPOSE_DIR=$(dirname "$COMPOSE_PATH")
     COMPOSE_FILE=$(basename "$COMPOSE_PATH")
 
 
-    # Verify we can cd to the directory and file exists ---------------------------------------------
+    #---------------------------------------------
+    # Verify we can cd to the directory and file exists
+    #---------------------------------------------
     if ! cd "$COMPOSE_DIR" 2>/dev/null; then
         echo "$SERVICE: cannot cd to $COMPOSE_DIR"
         continue
     fi
 
 
-    # Skip if a .docker-updater-ignore file exists in the root folder ---------------------------------------------
+    #---------------------------------------------
+    # Skip if a .docker-updater-ignore file exists in the root folder
+    #---------------------------------------------
     if [[ -f "./.docker-updater-ignore" ]]; then
         echo "$SERVICE: .docker-updater-ignore file present --> skipping this service"
         continue
     fi
 
 
-    # Skip if a Dockerfile exists in the root folder ---------------------------------------------
+    #---------------------------------------------
+    # Skip if a Dockerfile exists in the root folder
+    #---------------------------------------------
     if [[ -f "./Dockerfile" ]]; then
         echo "$SERVICE: Dockerfile present --> skipping this service"
         continue
     fi
 
 
-    # Verify docker-compose file exists ---------------------------------------------
+    #---------------------------------------------
+    # Verify docker-compose file exists
+    #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
         echo "$SERVICE: compose file missing --> $COMPOSE_PATH"
         continue
     fi
 
 
-    # Capture current image digests ---------------------------------------------
+    #---------------------------------------------
+    # Capture current image digests
+    #---------------------------------------------
     declare -A BEFORE
 
     # get list of images used by the inspected service
@@ -110,7 +136,9 @@ while read -r LINE; do
     done
 
 
-    # Pull latest images for this service ---------------------------------------------
+    #---------------------------------------------
+    # Pull latest images for this service
+    #---------------------------------------------
     if (( QUIET )); then
         docker compose pull >/dev/null 2>&1
     else
@@ -120,7 +148,9 @@ while read -r LINE; do
     fi
 
 
-    # Capture new image digests ---------------------------------------------
+    #---------------------------------------------
+    # Capture new image digests
+    #---------------------------------------------
     declare -A AFTER
 
     # get list of images used by the inspected service
@@ -143,7 +173,9 @@ while read -r LINE; do
     done
 
 
-    # Compare digests before and after ---------------------------------------------
+    #---------------------------------------------
+    # Compare digests before and after
+    #---------------------------------------------
     CHANGED=()
     for IMG in "${!AFTER[@]}"; do
         if [[ "${BEFORE[$IMG]}" != "${AFTER[$IMG]}" ]]; then
@@ -152,7 +184,9 @@ while read -r LINE; do
     done
 
 
-    # If any digests differ, recreate service ---------------------------------------------
+    #---------------------------------------------
+    # If any digests differ, recreate service
+    #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
         echo "$SERVICE: out-of-date --> ${CHANGED[*]}"
         
@@ -177,16 +211,22 @@ while read -r LINE; do
     fi
 
 
-    # clean associative arrays for next iteration ---------------------------------------------
+    #---------------------------------------------
+    # clean associative arrays for next iteration
+    #---------------------------------------------
     unset BEFORE AFTER
 done
 
 
-# separator for improving readability in non-quiet mode ---------------------------------------------
+#---------------------------------------------
+# separator for improving readability in non-quiet mode
+#---------------------------------------------
 if (( ! QUIET )); then
     echo "---------------------------------------------"
 fi
 
 
-# Exit ---------------------------------------------
+#---------------------------------------------
+# Exit
+#---------------------------------------------
 exit 0
