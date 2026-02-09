@@ -1,12 +1,7 @@
 # Docker Helper Scripts
 
 
-A tiny collection of Bash utilities to manage Docker projects locally.
-The scripts ``docker-refresh.sh`` and ``docker-bake.sh`` operate on the current directory by default, or on a directory passed with ``-d``.
-The script ``docker-updater.sh`` can be executed in a safe dry-run with the ``-d``option.
-All scripts display a help message with the ``-h``option.
-
-They enforce execution as root (or via sudo) and provide minimal, clear output.
+A collection of utilities to manage Docker projects locally.
 
 
 ## Repository Structure
@@ -23,6 +18,9 @@ They enforce execution as root (or via sudo) and provide minimal, clear output.
 
 ### docker-refresh.sh
 
+Pulls the latest images for the current Compose project, stops and removes the running containers, and brings the stack back up with ``docker compose up -d --force-recreate``.
+An optional ``-d DIR`` flag selects the target directory.
+
 ```shell
 # Run in the current folder
 sudo ./docker-refresh.sh
@@ -31,10 +29,14 @@ sudo ./docker-refresh.sh
 sudo ./docker-refresh.sh -d /path/to/project
 ```
 
-Stops, removes, pulls, and recreates containers defined in docker-compose.yml.
-
 
 ### docker-bake.sh
+
+This script automates rebuilding and redeploying a Docker Compose service.
+It lets you specify a target directory, repository name, and image tag (defaulting to the current date).
+The script operates on the current directory by default.
+After validating that a ``Dockerfile`` and ``docker-compose.yml`` exist and that the script is run as root, it builds a new image (both a dated tag and a latest tag) with ``docker buildx``.
+Finally, it stops the existing containers, removes them, and brings the stack back up with the freshly built images using ``docker compose up -d --force-recreate``.
 
 ```shell
 # Build using the current folder name as repository, tag = today's date
@@ -49,23 +51,20 @@ Builds Docker images, tags them, and restarts the compose stack.
 
 ### docker-updater.sh
 
+This script scans all Docker Compose services on the host, checks each service's current image digests, pulls the latest images, and automatically restarts any services whose images have been updated.
+It supports a dry-run mode to report out-of-date services without restarting, and a quiet mode to suppress command output.
+The presence of a ``.docker-updater-ignore`` file in a service's directory tells the script to skip that service during update checks.
+
 ```shell
 # Normal mode - update services that have newer images
 sudo ./docker-updater.sh
 
 # Dry-run mode - detect updates but do NOT restart services
 sudo ./docker-updater.sh -d
+
+# Quiet mode - suppresses outputs of docker commands, only prompts minimal information
+sudo ./docker-updater.sh -q
 ```
-
-1. Lists all compose services (docker compose ls --format table).
-2. Uses the first path from the third column (handles comma‑separated lists).
-3. Skips a service if a Dockerfile is present in its root folder.
-4. Records current image IDs, pulls the latest images, records new IDs.
-5. If any image digest changed, it runs docker compose up -d --force-recreate (unless -d dry‑run is set).
-6. Prints only minimal log lines, e.g.
-    - myservice: updated images --> repo1:tag1 repo2:tag2 or
-    - myservice: up-to-date.
-
 
 
 ## Requirements
@@ -78,7 +77,7 @@ sudo ./docker-updater.sh -d
 
 | Major | Minor | Fix | Concerns | Note |
 | ----- | ----- | --- | -------- | ---- |
-|       | 1     | 0   | ``docker-updater.sh``, ``README.md`` | Added new script ``docker-updater.sh`` and adjusted the readme. |
+|       | 1     | 0   | all | Added new script ``docker-updater.sh``, adjusted the readme, and updated comments in all scripts. |
 |       |       | 1   | ``README.md`` | Removed non-ASCII characters from readme. |
 | 2     | 0     | 0   | all | Added root-directory layout, sudo check, and refined usage messages. |
 | 1     | 0     | 0   | all | initial working version. |
