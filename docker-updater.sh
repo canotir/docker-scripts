@@ -90,7 +90,7 @@ while read -r LINE; do
     # Skip if a .docker-updater-ignore file exists in the root folder
     #---------------------------------------------
     if [[ -f "./.docker-updater-ignore" ]]; then
-        echo "$SERVICE: .docker-updater-ignore file present --> skipping this service"
+        echo -e "$SERVICE: \e[38;5;208m.docker-updater-ignore file present --> skipping this service\e[0m"
         continue
     fi
 
@@ -99,7 +99,7 @@ while read -r LINE; do
     # Skip if a Dockerfile exists in the root folder
     #---------------------------------------------
     if [[ -f "./Dockerfile" ]]; then
-        echo "$SERVICE: Dockerfile present --> skipping this service"
+        echo -e "$SERVICE: \e[38;5;208mDockerfile present --> skipping this service\e[0m"
         continue
     fi
 
