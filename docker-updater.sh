@@ -62,9 +62,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # increment counter
     (( NUM_SCANNED++ ))
 
-    #---------------------------------------------
     # separator for improving readability in non-quiet or verbose mode
-    #---------------------------------------------
     if (( ! QUIET || VERBOSE )); then
         echo $SEPARATOR
     fi
@@ -79,19 +77,24 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
 
     #---------------------------------------------
-    # Verbose output
+    # Verbose output: information on currently inspected service
     #---------------------------------------------
     if (( VERBOSE )); then
         echo ""
         echo "service ----> $SERVICE"
         echo "directory --> $COMPOSE_DIR"
+        echo ""
     fi
 
 
     #---------------------------------------------
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
-    if ! cd "$COMPOSE_DIR" 2>/dev/null; then
+    if ! cd "$COMPOSE_DIR" 2>/dev/null; then    
+        # verbose output
+        if (( VERBOSE )); then
+            echo ""
+        fi
         # log
         echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m" 
     
@@ -171,15 +174,16 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         # quiet mode
         docker compose pull >/dev/null 2>&1
     else
+        # separator if not verbose
+        if (( ! VERBOSE )); then
+            echo ""
+        fi
+
         # non-quiet mode
-        echo ""
         docker compose pull
     fi
     
-
-    #---------------------------------------------
     # separator for improving readability in non-quiet or verbose mode
-    #---------------------------------------------
     if (( ! QUIET || VERBOSE )); then
         echo ""
     fi
@@ -235,10 +239,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         fi
     done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
 
-
-    #---------------------------------------------
     # separator for improving readability in verbose mode
-    #---------------------------------------------
     if (( VERBOSE )); then
         echo ""
     fi
@@ -248,14 +249,16 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # If any digests differ, recreate services
     #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
+        # increment counter
+        (( NUM_UPDATED++ ))
+
+        # output service update status information: out-of-date
         echo -e "$SERVICE: \e[38;5;208mout-of-date --> ${CHANGED[*]}\e[0m"
         
+        # perform docker compose rebuild steps
         if (( DRY_RUN )); then
             echo " dry-run..."
         else
-            # increment counter
-            (( NUM_UPDATED++ ))
-
             # stop, remove, and recreate service with the new images
             if (( QUIET )); then
                 # quiet mode
@@ -271,13 +274,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             fi
         fi
     else
+        # output service update status information: up-to-date
         echo -e "$SERVICE: \e[32mup-to-date\e[0m"
     fi
 
-
-    #---------------------------------------------
     # separator for improving readability in non-quiet or verbose mode
-    #---------------------------------------------
     if (( ! QUIET || VERBOSE )); then
         echo ""
     fi
