@@ -125,9 +125,9 @@ while read -r LINE; do
 
         # separate out information
         CONTAINER=$1
-        REPO=$2
-        TAG=$3
-        IMG_REF="${REPO}:${TAG}"
+
+        # get image ref in repository:tag format used by the inspected container
+        IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
 
         # fetch digest of image used by inspected container
         DIGEST=$(docker inspect --format "{{.Image}}" "$CONTAINER" 2>/dev/null)
@@ -164,17 +164,16 @@ while read -r LINE; do
 
         # separate out information
         CONTAINER=$1
-        REPO=$2
-        TAG=$3
-        IMG_REF="${REPO}:${TAG}"
+
+        # get image ref in repository:tag format used by the inspected container
+        IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
 
         # fetch digest of image in the local image registry corresponding to the same repo:tag used by the inspected container
-        DIGEST=$(docker inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
+        DIGEST=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
 
         # store digest
         AFTER["$IMG_REF"]=$DIGEST
     done
-
 
     #---------------------------------------------
     # Compare digests before and after
