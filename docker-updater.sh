@@ -81,8 +81,8 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     if (( VERBOSE )); then
         echo ""
-        echo "service ----> $SERVICE"
-        echo "directory --> $COMPOSE_DIR"
+        echo "Service ----> $SERVICE"
+        echo "Directory --> $COMPOSE_DIR"
         echo ""
     fi
 
@@ -96,7 +96,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             echo ""
         fi
         # log
-        echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m" 
+        echo -e "$SERVICE: \e[31mDirectory does not exist --> $COMPOSE_DIR\e[0m" 
     
         # verbose output
         if (( VERBOSE )); then
@@ -153,7 +153,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
         # log
-        echo -e "$SERVICE: \e[31mcompose file missing --> $COMPOSE_DIR\e[0m"
+        echo -e "$SERVICE: \e[31mCompose file missing --> $COMPOSE_DIR\e[0m"
     
         # verbose output
         if (( VERBOSE )); then
@@ -179,6 +179,9 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             echo ""
         fi
 
+        # log
+        echo "Pulling images..."
+
         # non-quiet mode
         docker compose pull
     fi
@@ -192,16 +195,24 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     # Get and compare digests of images used by inspected service and the images in local storage after pulling
     #---------------------------------------------
-    # storage of the names of outdated images
-    CHANGED=()
+    # variables
+    CHANGED=() # storage of the names of outdated images
+    CONTAINER_LIST="" # list of all containers used by inspected service
 
     # output verbose
     if (( VERBOSE )); then
-        echo -e "container used by $SERVICE:"
+        echo -e "Container used by $SERVICE:"
     fi
 
     # cycle through every container deployed by the inspected service
     while FS=$'\t' read -r CONTAINER _ _ _; do
+        # add name of current inspected container to list
+        if [[ -z $CONTAINER_LIST ]]; then
+            CONTAINER_LIST=$CONTAINER
+        else
+            CONTAINER_LIST="$CONTAINER_LIST, $CONTAINER"
+        fi
+
         # get image ref in repository:tag format used by the inspected container
         IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
 
@@ -223,18 +234,18 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
             # output verbose
             if (( VERBOSE )); then
-                echo -e "      status --------------> \e[38;5;208mout-of-date\e[0m"
-                echo -e "      image ---------------> $IMG_REF"
-                echo    "      digest in use -------> $DIGEST_USED"
-                echo    "      digest in registry --> $DIGEST_REGISTRY"
+                echo -e "      Status --------------> \e[38;5;208mout-of-date\e[0m"
+                echo -e "      Image ---------------> $IMG_REF"
+                echo    "      Digest used ---------> $DIGEST_USED"
+                echo    "      Digest pulled -------> $DIGEST_REGISTRY"
             fi
         else
             # image up-to-date
             # output verbose
             if (( VERBOSE )); then
-                echo -e "      status --> \e[32mup-to-date\e[0m"
-                echo -e "      image ---> $IMG_REF"
-                echo    "      digest --> $DIGEST_USED"
+                echo -e "      Status --> \e[32mup-to-date\e[0m"
+                echo -e "      Image ---> $IMG_REF"
+                echo    "      Digest --> $DIGEST_USED"
             fi
         fi
     done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
@@ -257,7 +268,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         
         # perform docker compose rebuild steps
         if (( DRY_RUN )); then
-            echo " dry-run..."
+            echo "  --> dry-run..."
         else
             # stop, remove, and recreate service with the new images
             if (( QUIET )); then
@@ -268,9 +279,15 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             else
                 # non-quiet mode
                 echo ""
+                echo "Going to stop $CONTAINER_LIST"
                 docker compose stop
-                docker compose rm   -f
-                docker compose up   -d --force-recreate
+
+                echo ""
+                docker compose rm -f
+
+                echo ""
+                echo "Going to restart $CONTAINER_LIST"
+                docker compose up -d --force-recreate
             fi
         fi
     else
@@ -301,12 +318,12 @@ ELAPSED_TIME_s=$(awk "BEGIN {printf \"%.3f\", $(( END_TIME - START_TIME ))/10000
 if (( ! QUIET || VERBOSE )); then
     echo $SEPARATOR
     echo ""
-    echo -e "services scanned --> $NUM_SCANNED"
+    echo -e "Services scanned --> $NUM_SCANNED"
     echo -e "         updated --> \e[32m$NUM_UPDATED\e[0m"
     echo -e "         ignored --> \e[38;5;208m$NUM_IGNORED\e[0m"
     echo -e "         failed ---> \e[31m$NUM_FAILED\e[0m"
     echo ""
-    echo "elapsed time --> $ELAPSED_TIME_s seconds"
+    echo "Elapsed time --> $ELAPSED_TIME_s seconds"
     echo ""
     echo $SEPARATOR
 fi
