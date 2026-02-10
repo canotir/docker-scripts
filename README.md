@@ -61,10 +61,9 @@ sudo ./docker-updater.sh
 
 # Dry-run mode - detect updates but do NOT restart services
 sudo ./docker-updater.sh -d
-
-# Quiet mode - suppresses outputs of docker commands, only prompts minimal information
-sudo ./docker-updater.sh -q
 ```
+
+See help message (``-h``) of script for all available options and usage.
 
 
 ## Requirements
