@@ -165,7 +165,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
 
     #---------------------------------------------
-    # Capture new image digests
+    # Get and compare digests of images used by inspected service and the images in local storage after pulling
     #---------------------------------------------
     # storage of the names of outdated images
     CHANGED=()
