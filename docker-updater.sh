@@ -5,10 +5,10 @@
 # Usage
 #---------------------------------------------
 USAGE="
-Usage: $(basename "$0") [-h] [-d] [-q] [-v]
+Usage: $(basename "$0") [-h] [-d] [-D] [-v]
   -h    Show this help
   -d    Dry run - detect updates but do NOT restart services
-  -q    Quiet execution of docker commands
+  -D    Show terminal output of docker commands
   -v    Verbose output
 "
 
@@ -27,15 +27,15 @@ fi
 #---------------------------------------------
 # defaults
 DRY_RUN=0
-QUIET=0
+QUIET_DOCKER=1
 VERBOSE=0
 
 # get user input
-while getopts ":hdqv" opt; do
+while getopts ":hdDv" opt; do
   case $opt in
     h) echo "$USAGE"; exit 0 ;;
     d) DRY_RUN=1 ;;
-    q) QUIET=1 ;;
+    D) QUIET_DOCKER=0 ;;
     v) VERBOSE=1 ;;
     *) echo "$USAGE"; exit 1 ;;
   esac
@@ -63,7 +63,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     (( NUM_SCANNED++ ))
 
     # separator for improving readability in non-quiet or verbose mode
-    if (( ! QUIET || VERBOSE )); then
+    if (( ! QUIET_DOCKER || VERBOSE )); then
         echo $SEPARATOR
     fi
     
@@ -170,7 +170,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     # Pull latest images for this service
     #---------------------------------------------
-    if (( QUIET )); then
+    if (( QUIET_DOCKER )); then
         # quiet mode
         docker compose pull >/dev/null 2>&1
     else
@@ -252,7 +252,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
 
     # separator for improving readability in verbose mode
-    if (( VERBOSE )); then
+    if (( ! QUIET_DOCKER || VERBOSE )); then
         echo ""
     fi
 
@@ -275,7 +275,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             echo "  --> dry-run..."
         else
             # stop, remove, and recreate service with the new images
-            if (( QUIET )); then
+            if (( QUIET_DOCKER )); then
                 # quiet mode
                 docker compose stop                     >/dev/null 2>&1
                 docker compose rm   -f                  >/dev/null 2>&1
@@ -311,7 +311,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     fi
 
     # separator for improving readability in non-quiet or verbose mode
-    if (( ! QUIET || VERBOSE )); then
+    if (( ! QUIET_DOCKER || VERBOSE )); then
         echo ""
     fi
 done < <(docker compose ls --format table | tail -n +2) # get list of all services as table and skip the headline
@@ -330,7 +330,7 @@ ELAPSED_TIME_s=$(awk "BEGIN {printf \"%.3f\", $(( END_TIME - START_TIME ))/10000
 #---------------------------------------------
 # Verbose output: statistics
 #---------------------------------------------
-if (( ! QUIET || VERBOSE )); then
+if (( ! QUIET_DOCKER || VERBOSE )); then
     echo $SEPARATOR
     echo ""
     echo -e "Services scanned --> $NUM_SCANNED"
