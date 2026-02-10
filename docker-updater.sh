@@ -343,10 +343,10 @@ if (( ! QUIET || VERBOSE )); then
     echo $SEPARATOR
 else
     echo "----------------------------"
-    echo -e "Services scanned --> $NUM_SCANNED"
-    echo -e "         updated --> $NUM_UPDATED"
-    echo -e "         ignored --> $NUM_IGNORED"
-    echo -e "         failed ---> $NUM_FAILED"
+    echo -e "Scanned --> $NUM_SCANNED"
+    echo -e "Updated --> $NUM_UPDATED"
+    echo -e "Ignored --> $NUM_IGNORED"
+    echo -e "Failed ---> $NUM_FAILED"
 fi
 
 
