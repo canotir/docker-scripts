@@ -5,10 +5,11 @@
 # Usage
 #---------------------------------------------
 USAGE="
-Usage: $(basename "$0") [-h] [-d] [-q]
+Usage: $(basename "$0") [-h] [-d] [-q] [-v]
   -h    Show this help
   -d    Dry run - detect updates but do NOT restart services
   -q    Quiet execution of docker commands
+  -v    Verbose output
 "
 
 
@@ -27,52 +28,52 @@ fi
 # defaults
 DRY_RUN=0
 QUIET=0
+VERBOSE=0
 
 # get user input
-while getopts ":hdq" opt; do
+while getopts ":hdqv" opt; do
   case $opt in
     h) echo "$USAGE"; exit 0 ;;
     d) DRY_RUN=1 ;;
     q) QUIET=1 ;;
+    v) VERBOSE=1 ;;
     *) echo "$USAGE"; exit 1 ;;
   esac
 done
 
 
 #---------------------------------------------
-# Get list of compose services (table format)
+# Process all active docker services
 #---------------------------------------------
-docker compose ls --format table |
-tail -n +2 | # <-- skip header
-while read -r LINE; do
+# separator for non-quiet and verbose output
+SEPARATOR="------------------------------------------------------------------------------------------"
+
+# counter variables
+NUM_SCANNED=0
+NUM_UPDATED=0
+NUM_IGNORED=0
+NUM_FAILED=0
+
+# get start time for time tracking
+START_TIME=$(date +%s%N)
+
+# cycle through every service, 
+while FS=$'\t' read -r SERVICE _ CONFIG; do
+    # increment counter
+    (( NUM_SCANNED++ ))
+
     #---------------------------------------------
-    # separator for improving readability in non-quiet mode
+    # separator for improving readability in non-quiet or verbose mode
     #---------------------------------------------
-    if (( ! QUIET )); then
-        echo "------------------------------------------------------------------------------------------"
+    if (( ! QUIET || VERBOSE )); then
+        echo $SEPARATOR
     fi
-
-
-    #---------------------------------------------
-    # Split line into fields (whitespace separated)
-    #---------------------------------------------
-    set -- $LINE
-
-    # separate out information
-    SERVICE=$1
-    CONFIGRAW=$3 # third column = path to compose file
-
-
-    #---------------------------------------------
-    # Get the first config path
-    #---------------------------------------------
-    CONFIG=${CONFIGRAW%%,*}
-
+    
 
     #---------------------------------------------
     # Resolve directory and file
     #---------------------------------------------
-    COMPOSE_PATH="$CONFIG"
+    COMPOSE_PATH=${CONFIG%%,*}
     COMPOSE_DIR=$(dirname "$COMPOSE_PATH")
     COMPOSE_FILE=$(basename "$COMPOSE_PATH")
 
@@ -81,7 +82,12 @@ while read -r LINE; do
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
     if ! cd "$COMPOSE_DIR" 2>/dev/null; then
-        echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m"   
+        # log
+        echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m" 
+
+        # increment counter
+        (( NUM_FAILED++ ))
+
         continue
     fi
 
@@ -90,7 +96,12 @@ while read -r LINE; do
     # Skip if a .docker-updater-ignore file exists in the root folder
     #---------------------------------------------
     if [[ -f "./.docker-updater-ignore" ]]; then
-        echo -e "$SERVICE: \e[38;5;208m.docker-updater-ignore file present --> skipping this service\e[0m"
+        # log
+        echo -e "$SERVICE: .docker-updater-ignore file present --> skipping this service"
+
+        # increment counter
+        (( NUM_IGNORED++ ))
+
         continue
     fi
 
@@ -99,7 +110,12 @@ while read -r LINE; do
     # Skip if a Dockerfile exists in the root folder
     #---------------------------------------------
     if [[ -f "./Dockerfile" ]]; then
-        echo -e "$SERVICE: \e[38;5;208mDockerfile present --> skipping this service\e[0m"
+        # log
+        echo "$SERVICE: Dockerfile present --> skipping this service"
+
+        # increment counter
+        (( NUM_IGNORED++ ))
+
         continue
     fi
 
@@ -108,33 +124,23 @@ while read -r LINE; do
     # Verify docker-compose file exists
     #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
+        # log
         echo -e "$SERVICE: \e[31mcompose file missing --> $COMPOSE_DIR\e[0m"
+
+        # increment counter
+        (( NUM_FAILED++ ))
+
         continue
     fi
 
+
     #---------------------------------------------
-    # Capture current image digests
+    # Verbose output
     #---------------------------------------------
-    declare -A BEFORE
-
-    # get list of images used by the inspected service
-    docker compose images --format table |
-    tail -n +2 | # <-- skip header line
-    while read -r IMG_LINE; do
-        set -- $IMG_LINE
-
-        # separate out information
-        CONTAINER=$1
-
-        # get image ref in repository:tag format used by the inspected container
-        IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
-
-        # fetch digest of image used by inspected container
-        DIGEST=$(docker inspect --format "{{.Image}}" "$CONTAINER" 2>/dev/null)
-        
-        # store digest
-        BEFORE["$IMG_REF"]=$DIGEST
-    done
+    if (( VERBOSE )); then
+        echo ""
+        echo ">> $SERVICE:"
+    fi
 
 
     #---------------------------------------------
@@ -147,6 +153,13 @@ while read -r LINE; do
         # non-quiet mode
         echo ""
         docker compose pull
+    fi
+    
+
+    #---------------------------------------------
+    # separator for improving readability in non-quiet or verbose mode
+    #---------------------------------------------
+    if (( ! QUIET || VERBOSE )); then
         echo ""
     fi
 
@@ -154,36 +167,53 @@ while read -r LINE; do
     #---------------------------------------------
     # Capture new image digests
     #---------------------------------------------
-    declare -A AFTER
+    # storage of the names of outdated images
+    CHANGED=()
 
-    # get list of images used by the inspected service
-    docker compose images --format table |
-    tail -n +2 | # <-- skip header line
-    while read -r IMG_LINE; do
-        set -- $IMG_LINE
-
-        # separate out information
-        CONTAINER=$1
-
+    # cycle through every container deployed by the inspected service
+    while FS=$'\t' read -r CONTAINER _ _ _; do
         # get image ref in repository:tag format used by the inspected container
         IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
 
-        # fetch digest of image in the local image registry corresponding to the same repo:tag used by the inspected container
-        DIGEST=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
+        # fetch digest of image currently in use by container
+        DIGEST_USED=$(docker inspect --format "{{.Image}}" "$CONTAINER" 2>/dev/null)
 
-        # store digest
-        AFTER["$IMG_REF"]=$DIGEST
-    done
+        # fetch digest of corresponding image in local image registry 
+        DIGEST_REGISTRY=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
 
-    #---------------------------------------------
-    # Compare digests before and after
-    #---------------------------------------------
-    CHANGED=()
-    for IMG in "${!AFTER[@]}"; do
-        if [[ "${BEFORE[$IMG]}" != "${AFTER[$IMG]}" ]]; then
-            CHANGED+=("$IMG")
+        # output verbose
+        if (( VERBOSE )); then
+            echo -e "container: $CONTAINER"
         fi
-    done
+
+        # compare digests
+        if [[ $DIGEST_USED != $DIGEST_REGISTRY ]]; then
+            # image outdated
+            CHANGED+=("$IMG_REF")
+
+            # output verbose
+            if (( VERBOSE )); then
+                echo -e "  image: $IMG_REF --> \e[38;5;208mout-of-date\e[0m"
+                echo    "    in use -------> $DIGEST_USED"
+                echo    "    in registry --> $DIGEST_REGISTRY"
+            fi
+        else
+            # image up-to-date
+            # output verbose
+            if (( VERBOSE )); then
+                echo -e "  image: $IMG_REF --> \e[32mup-to-date\e[0m"
+                echo    "    digest --> $DIGEST_USED"
+            fi
+        fi
+    done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
+
+
+    #---------------------------------------------
+    # separator for improving readability in verbose mode
+    #---------------------------------------------
+    if (( VERBOSE )); then
+        echo ""
+    fi
 
 
     #---------------------------------------------
@@ -195,6 +225,9 @@ while read -r LINE; do
         if (( DRY_RUN )); then
             echo " dry-run..."
         else
+            # increment counter
+            (( NUM_UPDATED++ ))
+
             # stop, remove, and recreate service with the new images
             if (( QUIET )); then
                 # quiet mode
@@ -207,33 +240,46 @@ while read -r LINE; do
                 docker compose stop
                 docker compose rm   -f
                 docker compose up   -d --force-recreate
-                echo ""
             fi
         fi
     else
         echo -e "$SERVICE: \e[32mup-to-date\e[0m"
     fi
 
+
     #---------------------------------------------
-    # separator for improving readability in non-quiet mode
+    # separator for improving readability in non-quiet or verbose mode
     #---------------------------------------------
-    if (( ! QUIET )); then
+    if (( ! QUIET || VERBOSE )); then
         echo ""
     fi
-
-
-    #---------------------------------------------
-    # clean associative arrays for next iteration
-    #---------------------------------------------
-    unset BEFORE AFTER
-done
+done < <(docker compose ls --format table | tail -n +2) # get list of all services as table and skip the headline
 
 
 #---------------------------------------------
-# separator for improving readability in non-quiet mode
+# Compute elapsed time
 #---------------------------------------------
-if (( ! QUIET )); then
-    echo "------------------------------------------------------------------------------------------"
+# get end time for time tracking
+END_TIME=$(date +%s%N)
+
+# convert to seconds
+ELAPSED_TIME_s=$(awk "BEGIN {printf \"%.3f\", $(( END_TIME - START_TIME ))/1000000000}")
+
+
+#---------------------------------------------
+# Verbose output: statistics
+#---------------------------------------------
+if (( ! QUIET || VERBOSE )); then
+    echo $SEPARATOR
+    echo ""
+    echo -e "services scanned --> $NUM_SCANNED"
+    echo -e "  updated ---------> \e[32m$NUM_UPDATED\e[0m"
+    echo -e "  ignored ---------> \e[38;5;208m$NUM_IGNORED\e[0m"
+    echo -e "  failed ----------> \e[31m$NUM_FAILED\e[0m"
+    echo ""
+    echo "elapsed time --> $ELAPSED_TIME_s seconds"
+    echo ""
+    echo $SEPARATOR
 fi
 
 
