@@ -301,9 +301,9 @@ if (( ! QUIET || VERBOSE )); then
     echo $SEPARATOR
     echo ""
     echo -e "services scanned --> $NUM_SCANNED"
-    echo -e "  updated ---------> \e[32m$NUM_UPDATED\e[0m"
-    echo -e "  ignored ---------> \e[38;5;208m$NUM_IGNORED\e[0m"
-    echo -e "  failed ----------> \e[31m$NUM_FAILED\e[0m"
+    echo -e "         updated --> \e[32m$NUM_UPDATED\e[0m"
+    echo -e "         ignored --> \e[38;5;208m$NUM_IGNORED\e[0m"
+    echo -e "         failed ---> \e[31m$NUM_FAILED\e[0m"
     echo ""
     echo "elapsed time --> $ELAPSED_TIME_s seconds"
     echo ""
