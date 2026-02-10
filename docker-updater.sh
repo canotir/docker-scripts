@@ -184,11 +184,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
         # non-quiet mode
         docker compose pull
-    fi
-    
-    # separator for improving readability in non-quiet or verbose mode
-    if (( ! QUIET || VERBOSE )); then
-        echo ""
+
+        # separator if verbose
+        if (( VERBOSE )); then
+            echo ""
+        fi
     fi
 
 
@@ -213,6 +213,9 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             CONTAINER_LIST="$CONTAINER_LIST, $CONTAINER"
         fi
 
+        #---------------------------------------------
+        # Get digests of used and pulled images
+        #---------------------------------------------
         # get image ref in repository:tag format used by the inspected container
         IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
 
@@ -222,30 +225,28 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         # fetch digest of corresponding image in local image registry 
         DIGEST_REGISTRY=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
 
-        # output verbose
-        if (( VERBOSE )); then
-            echo -e "  - $CONTAINER"
-        fi
-
+        #---------------------------------------------
         # compare digests
+        #---------------------------------------------
         if [[ $DIGEST_USED != $DIGEST_REGISTRY ]]; then
-            # image outdated
+            # digests not identical --> image outdated
+            # store name of outdated image in list
             CHANGED+=("$IMG_REF")
 
             # output verbose
             if (( VERBOSE )); then
-                echo -e "      Status --------------> \e[38;5;208mout-of-date\e[0m"
-                echo -e "      Image ---------------> $IMG_REF"
-                echo    "      Digest used ---------> $DIGEST_USED"
-                echo    "      Digest pulled -------> $DIGEST_REGISTRY"
+                echo -e "- $CONTAINER --> \e[38;5;208mout-of-date\e[0m"
+                echo -e "  - Image ----------> $IMG_REF"
+                echo    "  - Digest USED ----> $DIGEST_USED"
+                echo    "  - Digest PULLED --> $DIGEST_REGISTRY"
             fi
         else
-            # image up-to-date
+            # digests identical --> image up-to-date
             # output verbose
             if (( VERBOSE )); then
-                echo -e "      Status --> \e[32mup-to-date\e[0m"
-                echo -e "      Image ---> $IMG_REF"
-                echo    "      Digest --> $DIGEST_USED"
+                echo -e "- $CONTAINER --> \e[32mup-to-date\e[0m"
+                echo -e "  - Image ---> $IMG_REF"
+                echo    "  - Digest --> $DIGEST_USED"
             fi
         fi
     done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
@@ -263,8 +264,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         # increment counter
         (( NUM_UPDATED++ ))
 
-        # output service update status information: out-of-date
-        echo -e "$SERVICE: \e[38;5;208mout-of-date --> ${CHANGED[*]}\e[0m"
+        # output service update status information if verbose: out-of-date
+        if (( VERBOSE )); then
+            echo -e "Image(s) out-of-date, rebuilding service..."
+            echo ""
+        fi
         
         # perform docker compose rebuild steps
         if (( DRY_RUN )); then
@@ -278,21 +282,32 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
                 docker compose up   -d --force-recreate >/dev/null 2>&1
             else
                 # non-quiet mode
-                echo ""
                 echo "Going to stop $CONTAINER_LIST"
                 docker compose stop
-
                 echo ""
+
                 docker compose rm -f
-
                 echo ""
+
                 echo "Going to restart $CONTAINER_LIST"
                 docker compose up -d --force-recreate
+                echo ""
             fi
+        fi
+
+        # output service update status information: updated
+        if (( VERBOSE )); then
+            echo -e "$SERVICE: \e[38;5;208mrebuild\e[0m"
+        else
+            echo "$SERVICE: rebuild --> ${CHANGED[*]}"
         fi
     else
         # output service update status information: up-to-date
-        echo -e "$SERVICE: \e[32mup-to-date\e[0m"
+        if (( VERBOSE )); then
+            echo -e "$SERVICE: \e[32mup-to-date\e[0m"
+        else
+            echo -e "$SERVICE: up-to-date"
+        fi
     fi
 
     # separator for improving readability in non-quiet or verbose mode
@@ -326,6 +341,12 @@ if (( ! QUIET || VERBOSE )); then
     echo "Elapsed time --> $ELAPSED_TIME_s seconds"
     echo ""
     echo $SEPARATOR
+else
+    echo "----------------------------"
+    echo -e "Services scanned --> $NUM_SCANNED"
+    echo -e "         updated --> $NUM_UPDATED"
+    echo -e "         ignored --> $NUM_IGNORED"
+    echo -e "         failed ---> $NUM_FAILED"
 fi
 
 
