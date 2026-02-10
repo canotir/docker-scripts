@@ -79,11 +79,26 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
 
     #---------------------------------------------
+    # Verbose output
+    #---------------------------------------------
+    if (( VERBOSE )); then
+        echo ""
+        echo "service ----> $SERVICE"
+        echo "directory --> $COMPOSE_DIR"
+    fi
+
+
+    #---------------------------------------------
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
     if ! cd "$COMPOSE_DIR" 2>/dev/null; then
         # log
         echo -e "$SERVICE: \e[31mdirectory does not exist --> $COMPOSE_DIR\e[0m" 
+    
+        # verbose output
+        if (( VERBOSE )); then
+            echo ""
+        fi
 
         # increment counter
         (( NUM_FAILED++ ))
@@ -98,6 +113,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     if [[ -f "./.docker-updater-ignore" ]]; then
         # log
         echo -e "$SERVICE: .docker-updater-ignore file present --> skipping this service"
+    
+        # verbose output
+        if (( VERBOSE )); then
+            echo ""
+        fi
 
         # increment counter
         (( NUM_IGNORED++ ))
@@ -112,6 +132,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     if [[ -f "./Dockerfile" ]]; then
         # log
         echo "$SERVICE: Dockerfile present --> skipping this service"
+    
+        # verbose output
+        if (( VERBOSE )); then
+            echo ""
+        fi
 
         # increment counter
         (( NUM_IGNORED++ ))
@@ -126,20 +151,16 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     if [[ ! -f "$COMPOSE_FILE" ]]; then
         # log
         echo -e "$SERVICE: \e[31mcompose file missing --> $COMPOSE_DIR\e[0m"
+    
+        # verbose output
+        if (( VERBOSE )); then
+            echo ""
+        fi
 
         # increment counter
         (( NUM_FAILED++ ))
 
         continue
-    fi
-
-
-    #---------------------------------------------
-    # Verbose output
-    #---------------------------------------------
-    if (( VERBOSE )); then
-        echo ""
-        echo ">> $SERVICE:"
     fi
 
 
@@ -170,6 +191,11 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # storage of the names of outdated images
     CHANGED=()
 
+    # output verbose
+    if (( VERBOSE )); then
+        echo -e "container used by $SERVICE:"
+    fi
+
     # cycle through every container deployed by the inspected service
     while FS=$'\t' read -r CONTAINER _ _ _; do
         # get image ref in repository:tag format used by the inspected container
@@ -183,7 +209,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
         # output verbose
         if (( VERBOSE )); then
-            echo -e "container: $CONTAINER"
+            echo -e "  - $CONTAINER"
         fi
 
         # compare digests
@@ -193,16 +219,18 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
             # output verbose
             if (( VERBOSE )); then
-                echo -e "  image: $IMG_REF --> \e[38;5;208mout-of-date\e[0m"
-                echo    "    in use -------> $DIGEST_USED"
-                echo    "    in registry --> $DIGEST_REGISTRY"
+                echo -e "      status --------------> \e[38;5;208mout-of-date\e[0m"
+                echo -e "      image ---------------> $IMG_REF"
+                echo    "      digest in use -------> $DIGEST_USED"
+                echo    "      digest in registry --> $DIGEST_REGISTRY"
             fi
         else
             # image up-to-date
             # output verbose
             if (( VERBOSE )); then
-                echo -e "  image: $IMG_REF --> \e[32mup-to-date\e[0m"
-                echo    "    digest --> $DIGEST_USED"
+                echo -e "      status --> \e[32mup-to-date\e[0m"
+                echo -e "      image ---> $IMG_REF"
+                echo    "      digest --> $DIGEST_USED"
             fi
         fi
     done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
