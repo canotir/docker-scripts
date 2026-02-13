@@ -5,21 +5,15 @@
 # Usage
 #---------------------------------------------
 USAGE="
-Usage: $(basename "$0") [-h] [-d] [-D] [-v]
+Usage: $(basename "$0") [-h] [-d] [-c] [-D] [-v] [-p] [-P]
   -h    Show this help
-  -d    Dry run - detect updates but do NOT restart services
-  -D    Show terminal output of docker commands
-  -v    Verbose output
+  -d    Dry run - detect updates but do NOT restart services, do NOT prune images.
+  -c    Disable colored terminal output in verbose and non-quiet docker mode (except for outputs of docker).
+  -D    Show terminal output of docker.
+  -v    Verbose output.
+  -p    Prune DANGLING images after service updates.
+  -P    Prune ALL unused images after service updates.
 "
-
-
-#---------------------------------------------
-# Must run as root (or via sudo) 
-#---------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-    echo -e "\e[31mERROR:\e[0m this script must be run as root (use sudo)." >&2
-    exit 1
-fi
 
 
 #---------------------------------------------
@@ -29,25 +23,125 @@ fi
 DRY_RUN=0
 QUIET_DOCKER=1
 VERBOSE=0
+PRUNE_IMAGES=0
+OPT_PRUNE_ALL=()
+COLOR_ENABLE=1
+
+# options
+OPTARGS="hdcDvpP"
 
 # get user input
-while getopts ":hdDv" opt; do
+while getopts $OPTARGS opt; do
   case $opt in
-    h) echo "$USAGE"; exit 0 ;;
-    d) DRY_RUN=1 ;;
-    D) QUIET_DOCKER=0 ;;
-    v) VERBOSE=1 ;;
-    *) echo "$USAGE"; exit 1 ;;
+    h) echo "$USAGE"; exit 0 ;;                 # print help and exit
+    d) DRY_RUN=1 ;;                             # set dry-run mode enabled
+    c) COLOR_ENABLE=0 ;;                        # disable color
+    D) QUIET_DOCKER=0 ;;                        # set non-quiet docker mode enabled
+    v) VERBOSE=1 ;;                             # set verbose output enabled
+    p) PRUNE_IMAGES=1 ;;                        # set prune dangling images enabled
+    P) PRUNE_IMAGES=1; OPT_PRUNE_ALL=(-a) ;;    # set prune all unused images enabled
+    ?) echo "$USAGE"; exit 1 ;;                 # unavailable option selected, print help and exit
   esac
 done
 
 
 #---------------------------------------------
+# Handle stray input
+#---------------------------------------------
+# Strips away all parsed options, leaving only leftover arguments.
+# After option parsing, any remaining tokens are non-option arguments.
+shift $((OPTIND - 1))
+
+# detect non-option arguments, print error, and exit
+if (( $# > 0 )); then
+    # display error message
+    echo "ERROR: Unexpected argument(s): $*"
+
+    # display help
+    echo "$USAGE"
+
+    exit 3
+fi
+
+
+#---------------------------------------------
+# Must run as root (or via sudo) 
+#---------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+    echo "ERROR: this script must be run as root (use sudo)."
+    exit 1
+fi
+
+
+#---------------------------------------------
+# Terminal output elements
+#---------------------------------------------
+# separator for non-quiet and verbose output --> length can be specified!
+SEPARATOR="$(printf '%*s' "90" '' | tr ' ' '-')"
+
+# color
+if (( COLOR_ENABLE )); then
+    # color enabled mode
+    COLOR_DEFAULT="\e[0m"
+    COLOR_SUCCESS="\e[32m"
+    COLOR_NOTE="\e[33m"
+    COLOR_ERROR="\e[31m"
+else
+    # color disenabled mode
+    COLOR_DEFAULT=""
+    COLOR_SUCCESS=""
+    COLOR_NOTE=""
+    COLOR_ERROR=""
+fi
+
+
+#---------------------------------------------
+# Functions
+#---------------------------------------------
+# docker: base command
+FN_DOCKER=(docker)
+
+# docker: get services and container
+FN_GET_SERVICES=(${FN_DOCKER[@]} compose ls --format table)
+FN_GET_SERVICE_CONTAINER=(${FN_DOCKER[@]} compose images --format table)
+
+# docker: compose stop, remove, up, pull
+FN_DOCKER_SERVICE_STOP=(${FN_DOCKER[@]} compose stop)
+FN_DOCKER_SERVICE_RM=(${FN_DOCKER[@]} compose rm -f)
+FN_DOCKER_SERVICE_UP=(${FN_DOCKER[@]} compose up -d --force-recreate)
+FN_DOCKER_PULL=(${FN_DOCKER[@]} compose pull)
+
+# docker: get image reference and digests
+FN_GET_IMG_REF=(${FN_DOCKER[@]} inspect --format "{{.Config.Image}}")
+FN_GET_DIGEST_USED=(${FN_DOCKER[@]} inspect --format "{{.Image}}")
+FN_GET_DIGEST_REGISTRY=(${FN_DOCKER[@]} image inspect --format "{{.Id}}")
+
+# docker: prune unused images
+FN_PRUNE_IMAGES=(${FN_DOCKER[@]} image prune -f ${OPT_PRUNE_ALL[@]})
+
+# skip and fetch lines
+FN_DROP_HEADER=(tail -n +2)
+FN_DROP_FOOTER=(head -n -1)
+FN_FETCH_FOOTER=(tail -n 1)
+
+# count lines
+FN_COUNT_LINES=(wc -l)
+
+
+#---------------------------------------------
+# Files
+#---------------------------------------------
+# docker
+DOCKER_FILE="Dockerfile"
+IGNORE_FILE=".docker-updater-ignore"
+
+# sinkhole file for command outputs
+SINKHOLE="/dev/null"
+
+
+#---------------------------------------------
 # Process all active docker services
 #---------------------------------------------
-# separator for non-quiet and verbose output
-SEPARATOR="------------------------------------------------------------------------------------------"
-
 # counter variables
 NUM_SCANNED=0
 NUM_UPDATED=0
@@ -57,13 +151,14 @@ NUM_FAILED=0
 # get start time for time tracking
 START_TIME=$(date +%s%N)
 
-# cycle through every service, 
+# cycle through every service
 while FS=$'\t' read -r SERVICE _ CONFIG; do
     # increment counter
     (( NUM_SCANNED++ ))
 
     # separator for improving readability in non-quiet or verbose mode
     if (( ! QUIET_DOCKER || VERBOSE )); then
+        echo ""
         echo $SEPARATOR
     fi
     
@@ -71,7 +166,14 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     # Resolve directory and file
     #---------------------------------------------
+    # The CONFIG variable may contain several filepaths to compose files used by the inspected service.
+    # The filepaths are separated by a comma.
+    # The first file should always be the main docker-compose file, the other files may be docker-compose-override files.
+    # However, this needs to be verified...
+    # For now, I just separate out the first entry and hope that my preliminary observations are correct :)
     COMPOSE_PATH=${CONFIG%%,*}
+
+    # separate directory and filename
     COMPOSE_DIR=$(dirname "$COMPOSE_PATH")
     COMPOSE_FILE=$(basename "$COMPOSE_PATH")
 
@@ -79,28 +181,23 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     # Verbose output: information on currently inspected service
     #---------------------------------------------
-    if (( VERBOSE )); then
+    if (( ! QUIET_DOCKER || VERBOSE )); then
         echo ""
-        echo "Service ----> $SERVICE"
-        echo "Directory --> $COMPOSE_DIR"
-        echo ""
+        echo "Service: $SERVICE"
+        echo "Directory: $COMPOSE_DIR"
     fi
 
 
     #---------------------------------------------
     # Verify we can cd to the directory and file exists
     #---------------------------------------------
-    if ! cd "$COMPOSE_DIR" 2>/dev/null; then    
-        # verbose output
-        if (( VERBOSE )); then
+    if ! cd "$COMPOSE_DIR" &>$SINKHOLE; then
+        # output
+        if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
-        fi
-        # log
-        echo -e "$SERVICE: \e[31mDirectory does not exist --> $COMPOSE_DIR\e[0m" 
-    
-        # verbose output
-        if (( VERBOSE )); then
-            echo ""
+            echo -e "${COLOR_ERROR}ERROR:${COLOR_DEFAULT} Directory non-existent."
+        else
+            echo "$SERVICE: Directory non-existent ($COMPOSE_DIR)"
         fi
 
         # increment counter
@@ -111,15 +208,15 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
 
     #---------------------------------------------
-    # Skip if a .docker-updater-ignore file exists in the root folder
+    # Skip if an ignore file exists in the root folder
     #---------------------------------------------
-    if [[ -f "./.docker-updater-ignore" ]]; then
-        # log
-        echo -e "$SERVICE: .docker-updater-ignore file present --> skipping this service"
-    
-        # verbose output
-        if (( VERBOSE )); then
+    if [[ -f "./$IGNORE_FILE" ]]; then
+        # output
+        if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
+            echo -e "${COLOR_NOTE}Skipping:${COLOR_DEFAULT} $IGNORE_FILE file present."
+        else
+            echo "$SERVICE: Skipping service ($IGNORE_FILE file present)."
         fi
 
         # increment counter
@@ -132,13 +229,13 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     # Skip if a Dockerfile exists in the root folder
     #---------------------------------------------
-    if [[ -f "./Dockerfile" ]]; then
-        # log
-        echo "$SERVICE: Dockerfile present --> skipping this service"
-    
-        # verbose output
-        if (( VERBOSE )); then
+    if [[ -f "./$DOCKER_FILE" ]]; then
+        # output
+        if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
+            echo -e "${COLOR_NOTE}Skipping:${COLOR_DEFAULT} $DOCKER_FILE present."
+        else
+            echo "$SERVICE: Skipping service ($DOCKER_FILE present)."
         fi
 
         # increment counter
@@ -152,12 +249,12 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # Verify docker-compose file exists
     #---------------------------------------------
     if [[ ! -f "$COMPOSE_FILE" ]]; then
-        # log
-        echo -e "$SERVICE: \e[31mCompose file missing --> $COMPOSE_DIR\e[0m"
-    
-        # verbose output
-        if (( VERBOSE )); then
+        # output
+        if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
+            echo -e "${COLOR_ERROR}ERROR:${COLOR_DEFAULT} $COMPOSE_FILE missing."
+        else
+            echo "$SERVICE: $COMPOSE_FILE missing."
         fi
 
         # increment counter
@@ -171,24 +268,15 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # Pull latest images for this service
     #---------------------------------------------
     if (( QUIET_DOCKER )); then
-        # quiet mode
-        docker compose pull >/dev/null 2>&1
+        # pull images quietly
+        ${FN_DOCKER_PULL[@]} &>$SINKHOLE
     else
-        # separator if not verbose
-        if (( ! VERBOSE )); then
-            echo ""
-        fi
-
         # log
+        echo ""
         echo "Pulling images..."
 
-        # non-quiet mode
-        docker compose pull
-
-        # separator if verbose
-        if (( VERBOSE )); then
-            echo ""
-        fi
+        # pull images
+        ${FN_DOCKER_PULL[@]}
     fi
 
 
@@ -196,12 +284,13 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     # Get and compare digests of images used by inspected service and the images in local storage after pulling
     #---------------------------------------------
     # variables
-    CHANGED=() # storage of the names of outdated images
-    CONTAINER_LIST="" # list of all containers used by inspected service
+    CHANGED=()          # storage of the names of outdated images
+    CONTAINER_LIST=""   # list of all containers used by inspected service
 
     # output verbose
     if (( VERBOSE )); then
-        echo -e "Container used by $SERVICE:"
+        echo ""
+        echo -e "Container status:"
     fi
 
     # cycle through every container deployed by the inspected service
@@ -213,17 +302,19 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             CONTAINER_LIST="$CONTAINER_LIST, $CONTAINER"
         fi
 
+
         #---------------------------------------------
         # Get digests of used and pulled images
         #---------------------------------------------
         # get image ref in repository:tag format used by the inspected container
-        IMG_REF=$(docker inspect --format "{{.Config.Image}}" "$CONTAINER" 2>/dev/null)
+        IMG_REF=$(${FN_GET_IMG_REF[@]} "$CONTAINER" 2>$SINKHOLE)
 
         # fetch digest of image currently in use by container
-        DIGEST_USED=$(docker inspect --format "{{.Image}}" "$CONTAINER" 2>/dev/null)
+        DIGEST_USED=$(${FN_GET_DIGEST_USED[@]} "$CONTAINER" 2>$SINKHOLE)
 
         # fetch digest of corresponding image in local image registry 
-        DIGEST_REGISTRY=$(docker image inspect --format "{{.Id}}" "$IMG_REF" 2>/dev/null)
+        DIGEST_REGISTRY=$(${FN_GET_DIGEST_REGISTRY[@]} "$IMG_REF" 2>$SINKHOLE)
+
 
         #---------------------------------------------
         # compare digests
@@ -235,21 +326,21 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
 
             # output verbose
             if (( VERBOSE )); then
-                echo -e "- $CONTAINER --> \e[38;5;208mout-of-date\e[0m"
-                echo -e "  - Image ----------> $IMG_REF"
-                echo    "  - Digest USED ----> $DIGEST_USED"
-                echo    "  - Digest PULLED --> $DIGEST_REGISTRY"
+                echo -e "- $CONTAINER: ${COLOR_NOTE}out-of-date${COLOR_DEFAULT}"
+                echo -e "  - Image: $IMG_REF"
+                echo    "  - Digest OLD: $DIGEST_USED"
+                echo    "           NEW: $DIGEST_REGISTRY"
             fi
         else
             # digests identical --> image up-to-date
             # output verbose
             if (( VERBOSE )); then
-                echo -e "- $CONTAINER --> \e[32mup-to-date\e[0m"
-                echo -e "  - Image ---> $IMG_REF"
-                echo    "  - Digest --> $DIGEST_USED"
+                echo -e "- $CONTAINER: ${COLOR_SUCCESS}up-to-date${COLOR_DEFAULT}"
+                echo -e "  - Image: $IMG_REF"
+                echo    "  - Digest: $DIGEST_USED"
             fi
         fi
-    done < <(docker compose images --format table | tail -n +2) # get list of all containers used by inspected service  as table and skip the headline
+    done < <(${FN_GET_SERVICE_CONTAINER[@]} | ${FN_DROP_HEADER[@]}) # get list of all containers used by inspected service  as table and skip the headline
 
     # separator for improving readability in verbose mode
     if (( ! QUIET_DOCKER || VERBOSE )); then
@@ -264,61 +355,182 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         # increment counter
         (( NUM_UPDATED++ ))
 
-        # output service update status information if verbose: out-of-date
+
+        #---------------------------------------------
+        # in verbose mode: output status before rebuild
+        #---------------------------------------------
         if (( VERBOSE )); then
-            echo -e "Image(s) out-of-date, rebuilding service..."
+            echo -e "${COLOR_NOTE}Image(s) out-of-date, rebuilding service...${COLOR_DEFAULT}"
             echo ""
         fi
         
+        #---------------------------------------------
         # perform docker compose rebuild steps
-        if (( DRY_RUN )); then
-            echo "  --> dry-run..."
-        else
+        #---------------------------------------------
+        if (( ! DRY_RUN )); then
+            #---------------------------------------------
             # stop, remove, and recreate service with the new images
+            #---------------------------------------------
             if (( QUIET_DOCKER )); then
                 # quiet mode
-                docker compose stop                     >/dev/null 2>&1
-                docker compose rm   -f                  >/dev/null 2>&1
-                docker compose up   -d --force-recreate >/dev/null 2>&1
+                ${FN_DOCKER_SERVICE_STOP[@]} &>$SINKHOLE
+                ${FN_DOCKER_SERVICE_RM[@]}   &>$SINKHOLE
+                ${FN_DOCKER_SERVICE_UP[@]}   &>$SINKHOLE
             else
                 # non-quiet mode
                 echo "Going to stop $CONTAINER_LIST"
-                docker compose stop
-                echo ""
+                ${FN_DOCKER_SERVICE_STOP[@]}
 
-                docker compose rm -f
                 echo ""
+                ${FN_DOCKER_SERVICE_RM[@]}
 
+                echo ""
                 echo "Going to restart $CONTAINER_LIST"
-                docker compose up -d --force-recreate
-                echo ""
+                ${FN_DOCKER_SERVICE_UP[@]}
             fi
-        fi
 
-        # output service update status information: updated
-        if (( VERBOSE )); then
-            echo -e "$SERVICE: \e[38;5;208mrebuild\e[0m"
+            #---------------------------------------------
+            # output service update status information: after rebuild
+            #---------------------------------------------
+            if (( ! QUIET_DOCKER || VERBOSE )); then
+                echo ""
+                echo -e "${COLOR_SUCCESS}Image(s) updated, service rebuilt.${COLOR_DEFAULT}"
+            else
+                echo "$SERVICE: Image(s) updated, service rebuilt (${CHANGED[*]})"
+            fi
         else
-            echo "$SERVICE: rebuild --> ${CHANGED[*]}"
+            #---------------------------------------------
+            # output service update status information: dry-run
+            #---------------------------------------------
+            if (( ! QUIET_DOCKER || VERBOSE )); then
+                echo -e "${COLOR_SUCCESS}No rebuilding performed (dry-run).${COLOR_DEFAULT}"
+            else
+                echo "$SERVICE: No rebuilding performed (dry-run)."
+            fi
         fi
     else
         # output service update status information: up-to-date
-        if (( VERBOSE )); then
-            echo -e "$SERVICE: \e[32mup-to-date\e[0m"
+        if (( ! QUIET_DOCKER || VERBOSE )); then
+            echo -e "Service status: ${COLOR_SUCCESS}up-to-date${COLOR_DEFAULT}"
         else
-            echo -e "$SERVICE: up-to-date"
+            echo "$SERVICE: up-to-date"
         fi
     fi
-
-    # separator for improving readability in non-quiet or verbose mode
-    if (( ! QUIET_DOCKER || VERBOSE )); then
-        echo ""
-    fi
-done < <(docker compose ls --format table | tail -n +2) # get list of all services as table and skip the headline
+done < <(${FN_GET_SERVICES[@]} | ${FN_DROP_HEADER[@]}) # get list of all services as table and skip the headline
 
 
 #---------------------------------------------
-# Compute elapsed time
+# Show statistics
+#---------------------------------------------
+if (( ! QUIET_DOCKER || VERBOSE )); then
+    echo ""
+    echo $SEPARATOR
+    echo ""
+    echo -e "Scanned: $NUM_SCANNED"
+    echo -e "Updated: ${COLOR_SUCCESS}$NUM_UPDATED${COLOR_DEFAULT}"
+    echo -e "Ignored: ${COLOR_NOTE}$NUM_IGNORED${COLOR_DEFAULT}"
+    echo -e "Failed:  ${COLOR_ERROR}$NUM_FAILED${COLOR_DEFAULT}"
+else
+    echo ""
+    echo -e "Scanned: $NUM_SCANNED"
+    echo -e "Updated: $NUM_UPDATED"
+    echo -e "Ignored: $NUM_IGNORED"
+    echo -e "Failed:  $NUM_FAILED"
+fi
+
+
+#---------------------------------------------
+# Prune images
+#---------------------------------------------
+if (( PRUNE_IMAGES )); then
+    # verbose or non-quiet docker output
+    if (( ! QUIET_DOCKER || VERBOSE )); then
+        echo ""
+        echo $SEPARATOR
+        echo ""
+        echo "Pruning unused images..."
+    fi
+
+
+    #---------------------------------------------
+    # Perform pruning
+    #---------------------------------------------
+    if (( ! DRY_RUN )); then
+        #---------------------------------------------
+        # Execute pruning command (quiet) and catch the terminal output
+        #---------------------------------------------
+        OUTPUT=$(${FN_PRUNE_IMAGES[@]} 2>$SINKHOLE)
+
+
+        #---------------------------------------------
+        # Split output
+        #---------------------------------------------
+        # drop header and last line --> returns only list of deleted images
+        LIST_DELETED_IMAGES=$(printf '%s\n' "$OUTPUT" | ${FN_DROP_HEADER[@]} | ${FN_DROP_FOOTER[@]})
+
+        # get last line of output --> reclaimed space
+        RECLAIMED_SPACE=$(printf '%s\n' "$OUTPUT" | ${FN_FETCH_FOOTER[@]}) 
+
+        # count number of deleted images (count lines in LIST_DELETED_IMAGES, subtract 1 --> first line is plain text)
+        NUM_DELETED_IMAGES=$(printf '%s\n' "$LIST_DELETED_IMAGES" | ${FN_COUNT_LINES[@]})
+    else
+        # dummy output in dry-run mode
+        LIST_DELETED_IMAGES="dry-run, no images deleted."
+        RECLAIMED_SPACE="Total reclaimed space: 0.0MB (dry-run)"
+        NUM_DELETED_IMAGES="0 (dry-run)"
+    fi
+
+
+    #---------------------------------------------
+    # Output results of pruning to terminal
+    #---------------------------------------------
+    if (( ! QUIET_DOCKER || VERBOSE )); then
+        #---------------------------------------------
+        # Non-quiet docker or verbose mode
+        #---------------------------------------------
+        # check if images have been deleted --> LIST_DELETED_IMAGES is empty if not
+        if [[ -n $LIST_DELETED_IMAGES ]]; then
+            # docker output: list of deleted images --> show only in non-quiet docker mode
+            if (( ! QUIET_DOCKER )); then
+                echo "$LIST_DELETED_IMAGES"
+            fi
+
+            # number of deleted images --> show only in verbose mode
+            if (( VERBOSE )); then
+                echo ""
+                echo -e "Deleted images: ${COLOR_SUCCESS}$NUM_DELETED_IMAGES${COLOR_DEFAULT}" 
+            fi
+
+            # output reclaimed space --> show in both modes
+            echo ""
+            echo -e "${COLOR_SUCCESS}$RECLAIMED_SPACE${COLOR_DEFAULT}"
+        else
+            # output if empty pruning output from docker --> no images have been deleted
+            echo ""
+            echo -e "${COLOR_SUCCESS}No unused images found.${COLOR_DEFAULT}"
+        fi
+    else
+        #---------------------------------------------
+        # Quiet-docker and non-verbose mode
+        #---------------------------------------------
+        # space
+        echo ""
+
+        # print result
+        if [[ -n $LIST_DELETED_IMAGES ]]; then
+            # output if non-empty pruning output from docker --> images have been deleted
+            echo "Deleted images: $NUM_DELETED_IMAGES"
+            echo "$RECLAIMED_SPACE"
+        else
+            # output if empty pruning output from docker --> no images have been deleted
+            echo "No unused images found."
+        fi
+    fi
+fi
+
+
+#---------------------------------------------
+# Elapsed time
 #---------------------------------------------
 # get end time for time tracking
 END_TIME=$(date +%s%N)
@@ -326,31 +538,25 @@ END_TIME=$(date +%s%N)
 # convert to seconds
 ELAPSED_TIME_s=$(awk "BEGIN {printf \"%.3f\", $(( END_TIME - START_TIME ))/1000000000}")
 
-
-#---------------------------------------------
-# Verbose output: statistics
-#---------------------------------------------
-if (( ! QUIET_DOCKER || VERBOSE )); then
-    echo $SEPARATOR
-    echo ""
-    echo -e "Services scanned --> $NUM_SCANNED"
-    echo -e "         updated --> \e[32m$NUM_UPDATED\e[0m"
-    echo -e "         ignored --> \e[38;5;208m$NUM_IGNORED\e[0m"
-    echo -e "         failed ---> \e[31m$NUM_FAILED\e[0m"
-    echo ""
-    echo "Elapsed time --> $ELAPSED_TIME_s seconds"
+# output in verbose mode
+if (( VERBOSE )); then
+    # separator
     echo ""
     echo $SEPARATOR
-else
-    echo "----------------------------"
-    echo -e "Scanned --> $NUM_SCANNED"
-    echo -e "Updated --> $NUM_UPDATED"
-    echo -e "Ignored --> $NUM_IGNORED"
-    echo -e "Failed ---> $NUM_FAILED"
+    echo ""
+    echo "Elapsed time: $ELAPSED_TIME_s seconds"
 fi
 
 
 #---------------------------------------------
 # Exit
 #---------------------------------------------
+# final separator in non-quiet docker or verbose mode
+if (( ! QUIET_DOCKER || VERBOSE )); then
+    echo ""
+    echo $SEPARATOR
+    echo ""
+fi
+
+# exit successfully
 exit 0
