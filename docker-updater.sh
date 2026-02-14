@@ -142,11 +142,15 @@ SINKHOLE="/dev/null"
 #---------------------------------------------
 # Process all active docker services
 #---------------------------------------------
-# counter variables
-NUM_SCANNED=0
-NUM_UPDATED=0
-NUM_IGNORED=0
-NUM_FAILED=0
+# counter variables: services
+NUM_SERVICES_SCANNED=0
+NUM_SERVICES_UPDATED=0
+NUM_SERVICES_IGNORED=0
+NUM_SERVICES_FAILED=0
+
+# counter variables: images
+NUM_CONTAINER_SCANNED=0
+NUM_CONTAINER_UPDATED=0
 
 # get start time for time tracking
 START_TIME=$(date +%s%N)
@@ -154,7 +158,7 @@ START_TIME=$(date +%s%N)
 # cycle through every service
 while FS=$'\t' read -r SERVICE _ CONFIG; do
     # increment counter
-    (( NUM_SCANNED++ ))
+    (( NUM_SERVICES_SCANNED++ ))
 
     # separator for improving readability in non-quiet or verbose mode
     if (( ! QUIET_DOCKER || VERBOSE )); then
@@ -201,7 +205,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         fi
 
         # increment counter
-        (( NUM_FAILED++ ))
+        (( NUM_SERVICES_FAILED++ ))
 
         continue
     fi
@@ -220,7 +224,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         fi
 
         # increment counter
-        (( NUM_IGNORED++ ))
+        (( NUM_SERVICES_IGNORED++ ))
 
         continue
     fi
@@ -239,7 +243,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         fi
 
         # increment counter
-        (( NUM_IGNORED++ ))
+        (( NUM_SERVICES_IGNORED++ ))
 
         continue
     fi
@@ -258,7 +262,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         fi
 
         # increment counter
-        (( NUM_FAILED++ ))
+        (( NUM_SERVICES_FAILED++ ))
 
         continue
     fi
@@ -302,6 +306,9 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             CONTAINER_LIST="$CONTAINER_LIST, $CONTAINER"
         fi
 
+        # increment counter
+        (( NUM_CONTAINER_SCANNED++ ))
+
 
         #---------------------------------------------
         # Get digests of used and pulled images
@@ -323,6 +330,9 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             # digests not identical --> image outdated
             # store name of outdated image in list
             CHANGED+=("$IMG_REF")
+
+            # increment counter
+            (( NUM_CONTAINER_UPDATED++ ))
 
             # output verbose
             if (( VERBOSE )); then
@@ -353,7 +363,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
     #---------------------------------------------
     if (( ${#CHANGED[@]} )); then
         # increment counter
-        (( NUM_UPDATED++ ))
+        (( NUM_SERVICES_UPDATED++ ))
 
 
         #---------------------------------------------
@@ -396,7 +406,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
                 echo ""
                 echo -e "${COLOR_SUCCESS}Image(s) updated, service rebuilt.${COLOR_DEFAULT}"
             else
-                echo "$SERVICE: Image(s) updated, service rebuilt (${CHANGED[*]})"
+                echo "$SERVICE: Image(s) updated (${CHANGED[*]}), service rebuilt."
             fi
         else
             #---------------------------------------------
@@ -423,19 +433,30 @@ done < <(${FN_GET_SERVICES[@]} | ${FN_DROP_HEADER[@]}) # get list of all service
 # Show statistics
 #---------------------------------------------
 if (( ! QUIET_DOCKER || VERBOSE )); then
-    echo ""
-    echo $SEPARATOR
-    echo ""
-    echo -e "Scanned: $NUM_SCANNED"
-    echo -e "Updated: ${COLOR_SUCCESS}$NUM_UPDATED${COLOR_DEFAULT}"
-    echo -e "Ignored: ${COLOR_NOTE}$NUM_IGNORED${COLOR_DEFAULT}"
-    echo -e "Failed:  ${COLOR_ERROR}$NUM_FAILED${COLOR_DEFAULT}"
+    # get number of digits
+    DIGITS=${#NUM_CONTAINER_SCANNED}
+
+    # print
+    printf "\n%s" "$SEPARATOR"
+    printf "\n"
+    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
+    printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
+    printf "          failed:  ${COLOR_ERROR}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_FAILED"
+    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
 else
-    echo ""
-    echo -e "Scanned: $NUM_SCANNED"
-    echo -e "Updated: $NUM_UPDATED"
-    echo -e "Ignored: $NUM_IGNORED"
-    echo -e "Failed:  $NUM_FAILED"
+    # get number of digits
+    DIGITS=${#NUM_CONTAINER_SCANNED}
+
+    # print
+    printf "\n"
+    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+    printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
+    printf "          ignored: %${DIGITS}s\n" "$NUM_SERVICES_IGNORED"
+    printf "          failed:  %${DIGITS}s\n" "$NUM_SERVICES_FAILED"
+    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+    printf "          updated: %${DIGITS}s\n" "$NUM_CONTAINER_UPDATED"
 fi
 
 
