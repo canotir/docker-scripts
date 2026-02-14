@@ -148,7 +148,7 @@ NUM_SERVICES_UPDATED=0
 NUM_SERVICES_IGNORED=0
 NUM_SERVICES_FAILED=0
 
-# counter variables: images
+# counter variables: container
 NUM_CONTAINER_SCANNED=0
 NUM_CONTAINER_UPDATED=0
 
@@ -432,11 +432,12 @@ done < <(${FN_GET_SERVICES[@]} | ${FN_DROP_HEADER[@]}) # get list of all service
 #---------------------------------------------
 # Show statistics
 #---------------------------------------------
-if (( ! QUIET_DOCKER || VERBOSE )); then
-    # get number of digits
-    DIGITS=${#NUM_CONTAINER_SCANNED}
+# get number of digits
+DIGITS=${#NUM_CONTAINER_SCANNED}
 
-    # print
+# print
+if (( ! QUIET_DOCKER || VERBOSE )); then
+    # non-quiet docker or verbose modes
     printf "\n%s\n\n" "$SEPARATOR"
     printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
     printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
@@ -445,10 +446,7 @@ if (( ! QUIET_DOCKER || VERBOSE )); then
     printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
     printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
 else
-    # get number of digits
-    DIGITS=${#NUM_CONTAINER_SCANNED}
-
-    # print
+    # quiet docker and non-verbose mode
     printf "\n"
     printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
     printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
