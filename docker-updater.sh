@@ -437,8 +437,7 @@ if (( ! QUIET_DOCKER || VERBOSE )); then
     DIGITS=${#NUM_CONTAINER_SCANNED}
 
     # print
-    printf "\n%s" "$SEPARATOR"
-    printf "\n"
+    printf "\n%s\n\n" "$SEPARATOR"
     printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
     printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
     printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
