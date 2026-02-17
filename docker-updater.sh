@@ -5,12 +5,13 @@
 # Usage
 #---------------------------------------------
 USAGE="
-Usage: $(basename "$0") [-h] [-d] [-c] [-D] [-v] [-p] [-P]
+Usage: $(basename "$0") [-h] [-d] [-c] [-D] [-v] [-u] [-p] [-P]
   -h    Show this help
   -d    Dry run - detect updates but do NOT restart services, do NOT prune images.
   -c    Disable colored terminal output in verbose and non-quiet docker mode (except for outputs of docker).
   -D    Show terminal output of docker.
   -v    Verbose output.
+  -u    Show only minimalistic output (updates performed/available, images pruned, and error messages).
   -p    Prune DANGLING images after service updates.
   -P    Prune ALL unused images after service updates.
 "
@@ -19,28 +20,41 @@ Usage: $(basename "$0") [-h] [-d] [-c] [-D] [-v] [-p] [-P]
 #---------------------------------------------
 # Parse options
 #---------------------------------------------
-# defaults
+# defaults: dry-run
 DRY_RUN=0
+
+# defaults: output modes
 QUIET_DOCKER=1
 VERBOSE=0
+UPDATES_ONLY=0
+
+# defaults: image pruning
 PRUNE_IMAGES=0
 OPT_PRUNE_ALL=()
+
+# defaults: color
 COLOR_ENABLE=1
 
 # options
-OPTARGS="hdcDvpP"
+OPTARGS="hdcDvupP"
 
 # get user input
 while getopts $OPTARGS opt; do
   case $opt in
-    h) echo "$USAGE"; exit 0 ;;                 # print help and exit
-    d) DRY_RUN=1 ;;                             # set dry-run mode enabled
-    c) COLOR_ENABLE=0 ;;                        # disable color
-    D) QUIET_DOCKER=0 ;;                        # set non-quiet docker mode enabled
-    v) VERBOSE=1 ;;                             # set verbose output enabled
-    p) PRUNE_IMAGES=1 ;;                        # set prune dangling images enabled
-    P) PRUNE_IMAGES=1; OPT_PRUNE_ALL=(-a) ;;    # set prune all unused images enabled
-    ?) echo "$USAGE"; exit 1 ;;                 # unavailable option selected, print help and exit
+    h)  echo "$USAGE";          # print help and exit
+        exit 0 ;;
+    d)  DRY_RUN=1 ;;            # set dry-run mode enabled
+    c)  COLOR_ENABLE=0 ;;       # disable color
+    D)  QUIET_DOCKER=0 ;;       # set non-quiet docker mode enabled
+    v)  VERBOSE=1 ;;            # set verbose output enabled
+    u)  QUIET_DOCKER=1;         # set minimalistic outputs enabled, disable verbose and non-quiet docker mode
+        VERBOSE=0;
+        UPDATES_ONLY=1 ;;
+    p)  PRUNE_IMAGES=1 ;;       # set prune dangling images enabled
+    P)  PRUNE_IMAGES=1;         # set prune all unused images enabled
+        OPT_PRUNE_ALL=(-a) ;;
+    ?)  echo "$USAGE";          # unavailable option selected, print help and exit
+        exit 1 ;;
   esac
 done
 
@@ -142,6 +156,9 @@ SINKHOLE="/dev/null"
 #---------------------------------------------
 # Process all active docker services
 #---------------------------------------------
+# status flag: updates performed
+UPDATES_PERFORMED=0
+
 # counter variables: services
 NUM_SERVICES_SCANNED=0
 NUM_SERVICES_UPDATED=0
@@ -201,7 +218,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             echo ""
             echo -e "${COLOR_ERROR}ERROR:${COLOR_DEFAULT} Directory non-existent."
         else
-            echo "$SERVICE: Directory non-existent ($COMPOSE_DIR)"
+            echo "ERROR - $SERVICE: Directory non-existent ($COMPOSE_DIR)."
         fi
 
         # increment counter
@@ -219,7 +236,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
             echo -e "${COLOR_NOTE}Skipping:${COLOR_DEFAULT} $IGNORE_FILE file present."
-        else
+        elif (( ! UPDATES_ONLY )); then
             echo "$SERVICE: Skipping service ($IGNORE_FILE file present)."
         fi
 
@@ -238,7 +255,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         if (( ! QUIET_DOCKER || VERBOSE )); then
             echo ""
             echo -e "${COLOR_NOTE}Skipping:${COLOR_DEFAULT} $DOCKER_FILE present."
-        else
+        elif (( ! UPDATES_ONLY )); then
             echo "$SERVICE: Skipping service ($DOCKER_FILE present)."
         fi
 
@@ -258,7 +275,7 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             echo ""
             echo -e "${COLOR_ERROR}ERROR:${COLOR_DEFAULT} $COMPOSE_FILE missing."
         else
-            echo "$SERVICE: $COMPOSE_FILE missing."
+            echo "ERROR - $SERVICE: $COMPOSE_FILE missing ($COMPOSE_DIR)."
         fi
 
         # increment counter
@@ -378,6 +395,9 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
         # perform docker compose rebuild steps
         #---------------------------------------------
         if (( ! DRY_RUN )); then
+            # flag updates performed
+            UPDATES_PERFORMED=1
+
             #---------------------------------------------
             # stop, remove, and recreate service with the new images
             #---------------------------------------------
@@ -413,12 +433,12 @@ while FS=$'\t' read -r SERVICE _ CONFIG; do
             # output service update status information: dry-run
             #---------------------------------------------
             if (( ! QUIET_DOCKER || VERBOSE )); then
-                echo -e "${COLOR_SUCCESS}No rebuilding performed (dry-run).${COLOR_DEFAULT}"
+                echo -e "${COLOR_SUCCESS}Updates available, no rebuilding performed (dry-run).${COLOR_DEFAULT}"
             else
-                echo "$SERVICE: No rebuilding performed (dry-run)."
+                echo "$SERVICE: Updates available, no rebuilding performed (dry-run)."
             fi
         fi
-    else
+    elif (( ! UPDATES_ONLY )); then
         # output service update status information: up-to-date
         if (( ! QUIET_DOCKER || VERBOSE )); then
             echo -e "Service status: ${COLOR_SUCCESS}up-to-date${COLOR_DEFAULT}"
@@ -436,24 +456,26 @@ done < <(${FN_GET_SERVICES[@]} | ${FN_DROP_HEADER[@]}) # get list of all service
 DIGITS=${#NUM_CONTAINER_SCANNED}
 
 # print
-if (( ! QUIET_DOCKER || VERBOSE )); then
-    # non-quiet docker or verbose modes
-    printf "\n%s\n\n" "$SEPARATOR"
-    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
-    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
-    printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
-    printf "          failed:  ${COLOR_ERROR}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_FAILED"
-    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
-    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
-else
-    # quiet docker and non-verbose mode
-    printf "\n"
-    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
-    printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
-    printf "          ignored: %${DIGITS}s\n" "$NUM_SERVICES_IGNORED"
-    printf "          failed:  %${DIGITS}s\n" "$NUM_SERVICES_FAILED"
-    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
-    printf "          updated: %${DIGITS}s\n" "$NUM_CONTAINER_UPDATED"
+if (( UPDATES_PERFORMED )); then
+    if (( ! QUIET_DOCKER || VERBOSE )); then
+        # non-quiet docker or verbose modes
+        printf "\n%s\n\n" "$SEPARATOR"
+        printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+        printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
+        printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
+        printf "          failed:  ${COLOR_ERROR}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_FAILED"
+        printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+        printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
+    else
+        # quiet docker and non-verbose mode
+        printf "\n"
+        printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+        printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
+        printf "          ignored: %${DIGITS}s\n" "$NUM_SERVICES_IGNORED"
+        printf "          failed:  %${DIGITS}s\n" "$NUM_SERVICES_FAILED"
+        printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+        printf "          updated: %${DIGITS}s\n" "$NUM_CONTAINER_UPDATED"
+    fi
 fi
 
 
@@ -531,16 +553,15 @@ if (( PRUNE_IMAGES )); then
         #---------------------------------------------
         # Quiet-docker and non-verbose mode
         #---------------------------------------------
-        # space
-        echo ""
-
         # print result
         if [[ -n $LIST_DELETED_IMAGES ]]; then
             # output if non-empty pruning output from docker --> images have been deleted
+            echo ""
             echo "Deleted images: $NUM_DELETED_IMAGES"
             echo "$RECLAIMED_SPACE"
-        else
+        elif (( ! UPDATES_ONLY )); then
             # output if empty pruning output from docker --> no images have been deleted
+            echo ""
             echo "No unused images found."
         fi
     fi
