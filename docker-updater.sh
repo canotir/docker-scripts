@@ -456,26 +456,24 @@ done < <(${FN_GET_SERVICES[@]} | ${FN_DROP_HEADER[@]}) # get list of all service
 DIGITS=${#NUM_CONTAINER_SCANNED}
 
 # print
-if (( UPDATES_PERFORMED )); then
-    if (( ! QUIET_DOCKER || VERBOSE )); then
-        # non-quiet docker or verbose modes
-        printf "\n%s\n\n" "$SEPARATOR"
-        printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
-        printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
-        printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
-        printf "          failed:  ${COLOR_ERROR}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_FAILED"
-        printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
-        printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
-    else
-        # quiet docker and non-verbose mode
-        printf "\n"
-        printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
-        printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
-        printf "          ignored: %${DIGITS}s\n" "$NUM_SERVICES_IGNORED"
-        printf "          failed:  %${DIGITS}s\n" "$NUM_SERVICES_FAILED"
-        printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
-        printf "          updated: %${DIGITS}s\n" "$NUM_CONTAINER_UPDATED"
-    fi
+if (( ! QUIET_DOCKER || VERBOSE )); then
+    # non-quiet docker or verbose modes
+    printf "\n%s\n\n" "$SEPARATOR"
+    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_UPDATED"
+    printf "          ignored: ${COLOR_NOTE}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_IGNORED"
+    printf "          failed:  ${COLOR_ERROR}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_SERVICES_FAILED"
+    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+    printf "          updated: ${COLOR_SUCCESS}%${DIGITS}s${COLOR_DEFAULT}\n" "$NUM_CONTAINER_UPDATED"
+elif (( UPDATES_PERFORMED || ! UPDATES_ONLY )); then
+    # quiet docker and non-verbose mode
+    printf "\n"
+    printf "Services  scanned: %${DIGITS}s\n" "$NUM_SERVICES_SCANNED"
+    printf "          updated: %${DIGITS}s\n" "$NUM_SERVICES_UPDATED"
+    printf "          ignored: %${DIGITS}s\n" "$NUM_SERVICES_IGNORED"
+    printf "          failed:  %${DIGITS}s\n" "$NUM_SERVICES_FAILED"
+    printf "Container scanned: %${DIGITS}s\n" "$NUM_CONTAINER_SCANNED"
+    printf "          updated: %${DIGITS}s\n" "$NUM_CONTAINER_UPDATED"
 fi
 
 
