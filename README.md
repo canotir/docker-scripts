@@ -76,6 +76,7 @@ See help message (``-h``) of script for all available options and usage.
 
 | Major | Minor | Fix | Concerns | Note |
 | ----- | ----- | --- | -------- | ---- |
+|       |       | 1   | ``docker-updater.sh`` | Fixed non-output of statistics message in normal mode, if no updates have been performed. |
 |       | 2     | 0   | ``docker-updater.sh`` | Added ``-u`` option for only printing a terminal output in case updates have been performed, are available, images have been pruned, or errors have occurred. |
 |       | 1     | 0   | all | Added new script ``docker-updater.sh``, adjusted the readme, and updated comments in all scripts. |
 |       |       | 1   | ``README.md`` | Removed non-ASCII characters from readme. |
